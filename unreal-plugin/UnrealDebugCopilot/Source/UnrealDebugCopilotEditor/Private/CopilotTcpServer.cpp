@@ -21,6 +21,13 @@
 #include "Serialization/JsonWriter.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
 
+#include "ContentBrowserModule.h"
+#include "IContentBrowserSingleton.h"
+#include "EditorViewportClient.h"
+#include "FileHelpers.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Widgets/SWindow.h"
+
 #include "Components/SceneComponent.h"
 #include "Engine/Blueprint.h"
 #include "Engine/SCS_Node.h"
@@ -330,9 +337,25 @@ namespace
           TEXT("get_current_project"),
           TEXT("get_plugin_version"),
           TEXT("get_protocol_capabilities"),
+          TEXT("get_current_level"),
+          TEXT("get_open_levels"),
           TEXT("get_open_editors"),
+          TEXT("get_open_asset_editors"),
+          TEXT("get_active_asset_editor"),
           TEXT("get_active_blueprint"),
+          TEXT("get_active_blueprint_graph"),
+          TEXT("get_selected_blueprint_nodes"),
+          TEXT("get_focused_blueprint_node"),
+          TEXT("get_selected_assets"),
           TEXT("get_selected_actors"),
+          TEXT("get_selected_components"),
+          TEXT("get_world_outliner_selection"),
+          TEXT("get_editor_viewport_state"),
+          TEXT("get_content_browser_path"),
+          TEXT("get_editor_mode"),
+          TEXT("get_dirty_assets"),
+          TEXT("get_pending_editor_notifications"),
+          TEXT("get_message_log_summary"),
           TEXT("get_component_tree"),
           TEXT("list_assets"),
           TEXT("inspect_object"),
@@ -402,6 +425,73 @@ namespace
 
         Result->SetArrayField(TEXT("editors"), Editors);
       }
+      else if (Method == TEXT("get_open_asset_editors"))
+      {
+        // RPC alias.
+        TArray<TSharedPtr<FJsonValue>> Editors;
+        if (GEditor)
+        {
+          UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+          if (AssetEditorSubsystem)
+          {
+            const TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
+            for (UObject* Asset : EditedAssets)
+            {
+              if (!Asset)
+              {
+                continue;
+              }
+
+              TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+              Obj->SetStringField(TEXT("name"), Asset->GetName());
+              Obj->SetStringField(TEXT("class"), Asset->GetClass() ? Asset->GetClass()->GetName() : TEXT(""));
+              Obj->SetStringField(TEXT("object_path"), Asset->GetPathName());
+              Obj->SetStringField(TEXT("asset_path"), Asset->GetOutermost() ? Asset->GetOutermost()->GetName() : TEXT(""));
+              Editors.Add(MakeShared<FJsonValueObject>(Obj));
+            }
+          }
+        }
+        Result->SetArrayField(TEXT("editors"), Editors);
+      }
+      else if (Method == TEXT("get_active_asset_editor"))
+      {
+        // Best-effort: returns a deterministic choice from open editors.
+        TSharedPtr<FJsonObject> Chosen = MakeShared<FJsonObject>();
+        bool bHasAny = false;
+
+        if (GEditor)
+        {
+          UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+          if (AssetEditorSubsystem)
+          {
+            TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
+            EditedAssets.Sort([](const UObject& A, const UObject& B) {
+              return A.GetPathName() < B.GetPathName();
+            });
+
+            if (EditedAssets.Num() > 0 && EditedAssets[0])
+            {
+              UObject* Asset = EditedAssets[0];
+              Chosen->SetStringField(TEXT("name"), Asset->GetName());
+              Chosen->SetStringField(TEXT("class"), Asset->GetClass() ? Asset->GetClass()->GetName() : TEXT(""));
+              Chosen->SetStringField(TEXT("object_path"), Asset->GetPathName());
+              Chosen->SetStringField(TEXT("asset_path"), Asset->GetOutermost() ? Asset->GetOutermost()->GetName() : TEXT(""));
+              bHasAny = true;
+            }
+          }
+        }
+
+        if (bHasAny)
+        {
+          Result->SetObjectField(TEXT("asset"), Chosen);
+          Result->SetStringField(TEXT("note"), TEXT("Best-effort: returned the first open asset editor by object path sort (not necessarily focused)."));
+        }
+        else
+        {
+          Result->SetField(TEXT("asset"), MakeShared<FJsonValueNull>());
+          Result->SetStringField(TEXT("note"), TEXT("No asset editors are open"));
+        }
+      }
       else if (Method == TEXT("get_active_blueprint"))
       {
         FString AssetPath;
@@ -447,6 +537,290 @@ namespace
             TEXT("Multiple Blueprint editors are open; returning the first Blueprint by object path sort (not necessarily focused).")
           );
         }
+        if (OpenBlueprintCount == 0)
+        {
+          Result->SetStringField(TEXT("note"), TEXT("No Blueprint asset editor is open"));
+        }
+      }
+      else if (Method == TEXT("get_current_level"))
+      {
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        const bool bValid = (World != nullptr);
+        Result->SetBoolField(TEXT("is_valid"), bValid);
+        Result->SetStringField(TEXT("world_name"), bValid ? World->GetName() : TEXT(""));
+        Result->SetStringField(TEXT("map_package"), bValid && World->GetOutermost() ? World->GetOutermost()->GetName() : TEXT(""));
+        Result->SetStringField(
+          TEXT("persistent_level"),
+          bValid && World->PersistentLevel && World->PersistentLevel->GetOutermost() ? World->PersistentLevel->GetOutermost()->GetName() : TEXT("")
+        );
+      }
+      else if (Method == TEXT("get_open_levels"))
+      {
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        const bool bValid = (World != nullptr);
+        Result->SetBoolField(TEXT("is_valid"), bValid);
+
+        Result->SetStringField(
+          TEXT("persistent_level"),
+          bValid && World->PersistentLevel && World->PersistentLevel->GetOutermost() ? World->PersistentLevel->GetOutermost()->GetName() : TEXT("")
+        );
+
+        TArray<TSharedPtr<FJsonValue>> Levels;
+        TArray<TSharedPtr<FJsonValue>> Streaming;
+
+        if (bValid)
+        {
+          const TArray<ULevel*>& AllLevels = World->GetLevels();
+          for (ULevel* L : AllLevels)
+          {
+            if (!L) continue;
+            TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+            Obj->SetStringField(TEXT("package"), L->GetOutermost() ? L->GetOutermost()->GetName() : TEXT(""));
+            Obj->SetBoolField(TEXT("is_persistent"), L == World->PersistentLevel);
+            Levels.Add(MakeShared<FJsonValueObject>(Obj));
+          }
+
+          const TArray<ULevelStreaming*> StreamingLevels = World->GetStreamingLevels();
+          for (ULevelStreaming* SL : StreamingLevels)
+          {
+            if (!SL) continue;
+            TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+            Obj->SetStringField(TEXT("package"), SL->GetWorldAssetPackageName());
+            Obj->SetBoolField(TEXT("loaded"), SL->IsLevelLoaded());
+            Obj->SetBoolField(TEXT("visible"), SL->GetShouldBeVisibleFlag());
+            Streaming.Add(MakeShared<FJsonValueObject>(Obj));
+          }
+        }
+
+        Result->SetArrayField(TEXT("levels"), Levels);
+        Result->SetArrayField(TEXT("streaming_levels"), Streaming);
+      }
+      else if (Method == TEXT("get_selected_assets"))
+      {
+        TArray<TSharedPtr<FJsonValue>> Assets;
+
+        FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+        TArray<FAssetData> Selected;
+        ContentBrowserModule.Get().GetSelectedAssets(Selected);
+
+        for (const FAssetData& A : Selected)
+        {
+          TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+          Obj->SetStringField(TEXT("name"), A.AssetName.ToString());
+          Obj->SetStringField(TEXT("class"), A.AssetClassPath.ToString());
+          Obj->SetStringField(TEXT("asset_path"), A.PackageName.ToString());
+          Obj->SetStringField(TEXT("object_path"), A.GetObjectPathString());
+          Assets.Add(MakeShared<FJsonValueObject>(Obj));
+        }
+
+        Result->SetArrayField(TEXT("assets"), Assets);
+      }
+      else if (Method == TEXT("get_selected_components"))
+      {
+        TArray<TSharedPtr<FJsonValue>> Components;
+        if (GEditor)
+        {
+          if (USelection* Selection = GEditor->GetSelectedComponents())
+          {
+            for (FSelectionIterator It(*Selection); It; ++It)
+            {
+              UActorComponent* C = Cast<UActorComponent>(*It);
+              if (!C) continue;
+
+              TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+              Obj->SetStringField(TEXT("name"), C->GetName());
+              Obj->SetStringField(TEXT("class"), C->GetClass() ? C->GetClass()->GetName() : TEXT(""));
+              Obj->SetStringField(TEXT("owner"), C->GetOwner() ? C->GetOwner()->GetName() : TEXT(""));
+
+              if (USceneComponent* SC = Cast<USceneComponent>(C))
+              {
+                Obj->SetArrayField(TEXT("relative_location"), VecToJson(SC->GetRelativeLocation()));
+                Obj->SetArrayField(TEXT("world_location"), VecToJson(SC->GetComponentLocation()));
+              }
+              Components.Add(MakeShared<FJsonValueObject>(Obj));
+            }
+          }
+        }
+        Result->SetArrayField(TEXT("components"), Components);
+      }
+      else if (Method == TEXT("get_world_outliner_selection"))
+      {
+        // Best-effort alias: actors only.
+        TArray<TSharedPtr<FJsonValue>> Actors;
+        if (GEditor)
+        {
+          USelection* Selection = GEditor->GetSelectedActors();
+          for (FSelectionIterator It(*Selection); It; ++It)
+          {
+            AActor* Actor = Cast<AActor>(*It);
+            if (!Actor) continue;
+            TSharedPtr<FJsonObject> A = MakeShared<FJsonObject>();
+            A->SetStringField(TEXT("name"), Actor->GetName());
+            A->SetStringField(TEXT("class"), Actor->GetClass() ? Actor->GetClass()->GetName() : TEXT(""));
+            Actors.Add(MakeShared<FJsonValueObject>(A));
+          }
+        }
+        Result->SetArrayField(TEXT("actors"), Actors);
+        Result->SetStringField(TEXT("note"), TEXT("Outliner selection is returned as actors only (best-effort)."));
+      }
+      else if (Method == TEXT("get_active_blueprint_graph"))
+      {
+        // Best-effort: derive from the chosen active Blueprint asset (not editor focus).
+        FString BPObjectPath;
+        FString GraphName;
+        FString GraphType;
+
+        UBlueprint* BP = nullptr;
+        if (GEditor)
+        {
+          UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+          if (AssetEditorSubsystem)
+          {
+            TArray<UBlueprint*> Blueprints;
+            const TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
+            for (UObject* Asset : EditedAssets)
+            {
+              if (UBlueprint* EditedBP = Cast<UBlueprint>(Asset))
+              {
+                Blueprints.Add(EditedBP);
+              }
+            }
+            Blueprints.Sort([](const UBlueprint& A, const UBlueprint& B) {
+              return A.GetPathName() < B.GetPathName();
+            });
+            if (Blueprints.Num() > 0)
+            {
+              BP = Blueprints[0];
+            }
+          }
+        }
+
+        if (BP)
+        {
+          BPObjectPath = BP->GetPathName();
+          if (BP->UbergraphPages.Num() > 0 && BP->UbergraphPages[0])
+          {
+            GraphName = BP->UbergraphPages[0]->GetName();
+            GraphType = TEXT("ubergraph");
+          }
+          else if (BP->FunctionGraphs.Num() > 0 && BP->FunctionGraphs[0])
+          {
+            GraphName = BP->FunctionGraphs[0]->GetName();
+            GraphType = TEXT("function");
+          }
+          else if (BP->MacroGraphs.Num() > 0 && BP->MacroGraphs[0])
+          {
+            GraphName = BP->MacroGraphs[0]->GetName();
+            GraphType = TEXT("macro");
+          }
+        }
+
+        Result->SetStringField(TEXT("blueprint_object_path"), BPObjectPath);
+        Result->SetStringField(TEXT("graph_name"), GraphName);
+        Result->SetStringField(TEXT("graph_type"), GraphType);
+        Result->SetStringField(TEXT("note"), TEXT("Best-effort: does not currently read focused graph from the Blueprint editor UI."));
+      }
+      else if (Method == TEXT("get_selected_blueprint_nodes"))
+      {
+        // TODO: Requires integration with the Blueprint editor GraphEditor selection.
+        Result->SetArrayField(TEXT("nodes"), TArray<TSharedPtr<FJsonValue>>());
+        Result->SetStringField(TEXT("note"), TEXT("Not yet implemented: GraphEditor selection is not exported."));
+      }
+      else if (Method == TEXT("get_focused_blueprint_node"))
+      {
+        Result->SetField(TEXT("node"), MakeShared<FJsonValueNull>());
+        Result->SetStringField(TEXT("note"), TEXT("Not yet implemented: focused node is not exported."));
+      }
+      else if (Method == TEXT("get_editor_viewport_state"))
+      {
+        const FViewport* Viewport = GEditor ? GEditor->GetActiveViewport() : nullptr;
+        const FViewportClient* VC = Viewport ? Viewport->GetClient() : nullptr;
+        const FEditorViewportClient* EVC = VC ? static_cast<const FEditorViewportClient*>(VC) : nullptr;
+
+        const bool bValid = (EVC != nullptr);
+        Result->SetBoolField(TEXT("is_valid"), bValid);
+        if (bValid)
+        {
+          const FVector Loc = EVC->GetViewLocation();
+          const FRotator Rot = EVC->GetViewRotation();
+          Result->SetArrayField(TEXT("camera_location"), VecToJson(Loc));
+          Result->SetArrayField(TEXT("camera_rotation"), RotToJson(Rot));
+          Result->SetNumberField(TEXT("view_mode_index"), static_cast<int32>(EVC->GetViewMode()));
+        }
+        else
+        {
+          Result->SetArrayField(TEXT("camera_location"), VecToJson(FVector::ZeroVector));
+          Result->SetArrayField(TEXT("camera_rotation"), RotToJson(FRotator::ZeroRotator));
+          Result->SetNumberField(TEXT("view_mode_index"), -1);
+        }
+      }
+      else if (Method == TEXT("get_content_browser_path"))
+      {
+        TArray<FString> Paths;
+        FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+        ContentBrowserModule.Get().GetSelectedPathViewFolders(Paths);
+
+        Result->SetArrayField(TEXT("paths"), [&Paths]() {
+          TArray<TSharedPtr<FJsonValue>> Arr;
+          for (const FString& P : Paths) Arr.Add(MakeShared<FJsonValueString>(P));
+          return Arr;
+        }());
+        Result->SetStringField(TEXT("path"), Paths.Num() > 0 ? Paths[0] : TEXT(""));
+      }
+      else if (Method == TEXT("get_editor_mode"))
+      {
+        TArray<TSharedPtr<FJsonValue>> Active;
+        if (GEditor)
+        {
+          TArray<FEditorModeID> ModeIds;
+          GLevelEditorModeTools().GetActiveModeIDs(ModeIds);
+          for (const FEditorModeID& Id : ModeIds)
+          {
+            Active.Add(MakeShared<FJsonValueString>(Id.ToString()));
+          }
+        }
+        Result->SetArrayField(TEXT("active_mode_ids"), Active);
+      }
+      else if (Method == TEXT("get_dirty_assets"))
+      {
+        TArray<UPackage*> Dirty;
+        FEditorFileUtils::GetDirtyContentPackages(Dirty);
+        TArray<UPackage*> DirtyWorld;
+        FEditorFileUtils::GetDirtyWorldPackages(DirtyWorld);
+        Dirty.Append(DirtyWorld);
+
+        TArray<TSharedPtr<FJsonValue>> Packages;
+        for (UPackage* Pkg : Dirty)
+        {
+          if (!Pkg) continue;
+          Packages.Add(MakeShared<FJsonValueString>(Pkg->GetName()));
+        }
+        Result->SetArrayField(TEXT("dirty_packages"), Packages);
+      }
+      else if (Method == TEXT("get_pending_editor_notifications"))
+      {
+        TArray<TSharedPtr<FJsonValue>> Modals;
+        int32 Count = 0;
+        if (FSlateApplication::IsInitialized())
+        {
+          const TArray<TSharedRef<SWindow>> ModalWindows = FSlateApplication::Get().GetInteractiveTopLevelWindows();
+          for (const TSharedRef<SWindow>& W : ModalWindows)
+          {
+            if (!W->IsModalWindow()) continue;
+            Count++;
+            TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+            Obj->SetStringField(TEXT("title"), W->GetTitle().ToString());
+            Modals.Add(MakeShared<FJsonValueObject>(Obj));
+          }
+        }
+        Result->SetNumberField(TEXT("modal_count"), Count);
+        Result->SetArrayField(TEXT("modal_windows"), Modals);
+        Result->SetStringField(TEXT("note"), TEXT("Best-effort: only modal windows are reported."));
+      }
+      else if (Method == TEXT("get_message_log_summary"))
+      {
+        Result->SetArrayField(TEXT("categories"), TArray<TSharedPtr<FJsonValue>>());
+        Result->SetStringField(TEXT("note"), TEXT("Not yet implemented: Message Log summary export is pending."));
       }
       else if (Method == TEXT("get_component_tree"))
       {
@@ -1000,14 +1374,27 @@ private:
           return;
         }
 
-        FString AssetPath;
-        Result->TryGetStringField(TEXT("asset_path"), AssetPath);
-        if (AssetPath.IsEmpty())
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
+        return;
+      }
+
+      if (
+        Method == TEXT("get_current_level") || Method == TEXT("get_open_levels") || Method == TEXT("get_selected_assets") ||
+        Method == TEXT("get_selected_components") || Method == TEXT("get_active_asset_editor") ||
+        Method == TEXT("get_open_asset_editors") || Method == TEXT("get_active_blueprint_graph") ||
+        Method == TEXT("get_selected_blueprint_nodes") || Method == TEXT("get_focused_blueprint_node") ||
+        Method == TEXT("get_editor_viewport_state") || Method == TEXT("get_world_outliner_selection") ||
+        Method == TEXT("get_content_browser_path") || Method == TEXT("get_editor_mode") || Method == TEXT("get_dirty_assets") ||
+        Method == TEXT("get_pending_editor_notifications") || Method == TEXT("get_message_log_summary")
+      )
+      {
+        bool bCompleted = false;
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, Params, bCompleted);
+        if (!bCompleted || !Result.IsValid())
         {
-          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("BLUEPRINT_NOT_FOUND"), TEXT("No Blueprint asset editor is open"))));
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
           return;
         }
-
         SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
         return;
       }

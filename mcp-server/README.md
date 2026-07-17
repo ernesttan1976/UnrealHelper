@@ -77,3 +77,16 @@ Runs a small sequence of direct TCP calls (bypassing MCP) so you can validate co
 ```bash
 UNREAL_HOST=127.0.0.1 UNREAL_PORT=17777 UNREAL_TOKEN=<token> node dist/probe.js
 ```
+
+## Test Each Set of Features
+```
+cd mcp-server
+npm run build
+npm run test:priority -- --priority 0
+```
+
+
+## Copy to Project Folder and Compile
+```
+./sync.ps1
+```

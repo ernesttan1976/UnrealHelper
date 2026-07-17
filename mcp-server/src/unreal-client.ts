@@ -137,8 +137,68 @@ export class UnrealClient {
     return this.request("get_open_editors");
   }
 
+  async getOpenAssetEditors(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_open_asset_editors");
+  }
+
   async getActiveBlueprint(): Promise<UnrealJsonRpcResponse> {
     return this.request("get_active_blueprint");
+  }
+
+  async getCurrentLevel(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_current_level");
+  }
+
+  async getOpenLevels(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_open_levels");
+  }
+
+  async getSelectedAssets(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_selected_assets");
+  }
+
+  async getSelectedComponents(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_selected_components");
+  }
+
+  async getActiveAssetEditor(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_active_asset_editor");
+  }
+
+  async getActiveBlueprintGraph(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_active_blueprint_graph");
+  }
+
+  async getSelectedBlueprintNodes(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_selected_blueprint_nodes");
+  }
+
+  async getFocusedBlueprintNode(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_focused_blueprint_node");
+  }
+
+  async getEditorViewportState(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_editor_viewport_state");
+  }
+
+  async getContentBrowserPath(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_content_browser_path");
+  }
+
+  async getEditorMode(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_editor_mode");
+  }
+
+  async getDirtyAssets(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_dirty_assets");
+  }
+
+  async getPendingEditorNotifications(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_pending_editor_notifications");
+  }
+
+  async getMessageLogSummary(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_message_log_summary");
   }
 
   async getComponentTree(params?: { actor_name?: string }): Promise<UnrealJsonRpcResponse> {
@@ -251,7 +311,26 @@ export class UnrealClient {
             "get_engine_version",
             "get_current_project",
             "get_plugin_version",
-            "get_protocol_capabilities"
+            "get_protocol_capabilities",
+            "get_selected_actors",
+            "get_open_editors",
+            "get_open_asset_editors",
+            "get_active_blueprint",
+            "get_current_level",
+            "get_open_levels",
+            "get_selected_assets",
+            "get_selected_components",
+            "get_active_asset_editor",
+            "get_active_blueprint_graph",
+            "get_selected_blueprint_nodes",
+            "get_focused_blueprint_node",
+            "get_editor_viewport_state",
+            "get_world_outliner_selection",
+            "get_content_browser_path",
+            "get_editor_mode",
+            "get_dirty_assets",
+            "get_pending_editor_notifications",
+            "get_message_log_summary"
           ]
         }
       };
@@ -299,12 +378,145 @@ export class UnrealClient {
         result: { editors: [] }
       };
     }
+    if (method === "get_open_asset_editors") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { editors: [] }
+      };
+    }
     if (method === "get_active_blueprint") {
       return {
         protocol_version: 1,
         request_id,
-        ok: false,
-        error: { code: "BLUEPRINT_NOT_FOUND", message: "No Blueprint asset editor is open" }
+        ok: true,
+        result: {
+          asset_path: "",
+          object_path: "",
+          open_blueprint_count: 0,
+          note: "Mock: no active Blueprint"
+        }
+      };
+    }
+    if (method === "get_current_level") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { world_name: "", map_package: "", persistent_level: "", is_valid: false }
+      };
+    }
+    if (method === "get_open_levels") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { persistent_level: "", levels: [], streaming_levels: [], is_valid: false }
+      };
+    }
+    if (method === "get_selected_assets") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { assets: [] }
+      };
+    }
+    if (method === "get_selected_components") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { components: [] }
+      };
+    }
+    if (method === "get_active_asset_editor") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { asset: null, note: "Mock: no active asset editor" }
+      };
+    }
+    if (method === "get_active_blueprint_graph") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { blueprint_object_path: "", graph_name: "", graph_type: "", note: "Mock: no active graph" }
+      };
+    }
+    if (method === "get_selected_blueprint_nodes") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { nodes: [], note: "Mock: no selected nodes" }
+      };
+    }
+    if (method === "get_focused_blueprint_node") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { node: null, note: "Mock: no focused node" }
+      };
+    }
+    if (method === "get_editor_viewport_state") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { camera_location: [0, 0, 0], camera_rotation: [0, 0, 0], view_mode: "unknown", is_valid: false }
+      };
+    }
+    if (method === "get_world_outliner_selection") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { actors: [] }
+      };
+    }
+    if (method === "get_content_browser_path") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { path: "", paths: [] }
+      };
+    }
+    if (method === "get_editor_mode") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { active_mode_ids: [] }
+      };
+    }
+    if (method === "get_dirty_assets") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { dirty_packages: [] }
+      };
+    }
+    if (method === "get_pending_editor_notifications") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { modal_windows: [], modal_count: 0 }
+      };
+    }
+    if (method === "get_message_log_summary") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { categories: [], note: "Mock: message log summary unavailable" }
       };
     }
     if (method === "list_assets") {

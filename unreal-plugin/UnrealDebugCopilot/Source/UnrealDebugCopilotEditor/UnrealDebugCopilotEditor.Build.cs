@@ -10,9 +10,11 @@ public class UnrealDebugCopilotEditor : ModuleRules
       new string[]
       {
         "AssetRegistry",
+        "ContentBrowser",
         "Core",
         "CoreUObject",
         "Engine",
+        "MessageLog",
         "Projects",
         "Slate",
         "SlateCore",

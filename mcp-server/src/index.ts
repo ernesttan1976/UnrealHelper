@@ -182,9 +182,89 @@ const TOOL_DEFS = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
   {
+    name: "unreal.get_open_asset_editors",
+    description: "Alias for unreal.get_open_editors.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
     name: "unreal.get_active_blueprint",
     description:
       "Get the Blueprint currently being edited (best-effort: if multiple are open, returns a deterministic choice).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_current_level",
+    description: "Get the active editor world and map.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_open_levels",
+    description: "Get the persistent and streamed levels for the active editor world.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_selected_assets",
+    description: "Get assets selected in the Content Browser.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_selected_components",
+    description: "Get components currently selected in the editor.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_active_asset_editor",
+    description: "Best-effort: get the currently active/focused asset editor.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_active_blueprint_graph",
+    description: "Best-effort: get the currently active/focused Blueprint graph.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_selected_blueprint_nodes",
+    description: "Best-effort: get selected nodes in the active Blueprint graph editor.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_focused_blueprint_node",
+    description: "Best-effort: get the most relevant selected/focused Blueprint node.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_editor_viewport_state",
+    description: "Get editor viewport camera transform and view mode (best-effort).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_world_outliner_selection",
+    description: "Alias for unreal.get_selected_actors (Outliner selection).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_content_browser_path",
+    description: "Get the current Content Browser path/folder (best-effort).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_editor_mode",
+    description: "Get active editor mode(s) (Select, Landscape, etc).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_dirty_assets",
+    description: "Get modified but unsaved packages/assets (best-effort).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_pending_editor_notifications",
+    description: "Get pending editor notifications/modals (best-effort).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_message_log_summary",
+    description: "Get a summary of Unreal Message Log categories (best-effort).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
   {
@@ -487,8 +567,88 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return asToolResult(res);
     }
 
+    if (name === "unreal.get_open_asset_editors") {
+      const res = await run("unreal.get_open_editors", () => client.getOpenEditors());
+      return asToolResult(res);
+    }
+
     if (name === "unreal.get_active_blueprint") {
       const res = await run(name, () => client.getActiveBlueprint());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_current_level") {
+      const res = await run(name, () => client.getCurrentLevel());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_open_levels") {
+      const res = await run(name, () => client.getOpenLevels());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_selected_assets") {
+      const res = await run(name, () => client.getSelectedAssets());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_selected_components") {
+      const res = await run(name, () => client.getSelectedComponents());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_active_asset_editor") {
+      const res = await run(name, () => client.getActiveAssetEditor());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_active_blueprint_graph") {
+      const res = await run(name, () => client.getActiveBlueprintGraph());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_selected_blueprint_nodes") {
+      const res = await run(name, () => client.getSelectedBlueprintNodes());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_focused_blueprint_node") {
+      const res = await run(name, () => client.getFocusedBlueprintNode());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_editor_viewport_state") {
+      const res = await run(name, () => client.getEditorViewportState());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_world_outliner_selection") {
+      const res = await run("unreal.get_selected_actors", () => client.getSelectedActors());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_content_browser_path") {
+      const res = await run(name, () => client.getContentBrowserPath());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_editor_mode") {
+      const res = await run(name, () => client.getEditorMode());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_dirty_assets") {
+      const res = await run(name, () => client.getDirtyAssets());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_pending_editor_notifications") {
+      const res = await run(name, () => client.getPendingEditorNotifications());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_message_log_summary") {
+      const res = await run(name, () => client.getMessageLogSummary());
       return asToolResult(res);
     }
 
