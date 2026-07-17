@@ -1,0 +1,9 @@
+**/node_modules/
+**/dist/
+*.log
+
+# Unreal build artifacts (plugin will live inside an Unreal project)
+**/Binaries/
+**/Intermediate/
+**/Saved/
+**/.vs/
