@@ -1,6 +1,4 @@
-$ErrorActionPreference = "Stop"
-
-<#!
+<#
 .SYNOPSIS
   Copies the UnrealDebugCopilot plugin into a UE project.
 
@@ -9,12 +7,14 @@ $ErrorActionPreference = "Stop"
 
 .EXAMPLE
   ./scripts/install-plugin.ps1 "D:/Projects/MyGame"
-#!>
+#>
 
 param(
   [Parameter(Mandatory = $true, Position = 0)]
   [string]$ProjectPath
 )
+
+$ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $src = Join-Path $repoRoot "unreal-plugin/UnrealDebugCopilot"
