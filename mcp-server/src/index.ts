@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
@@ -60,7 +62,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "unreal.get_component_tree",
-        description: "Get the component tree for a selected actor (default: first selected actor).",
+        description:
+          "Get the component tree for an actor (default: first selected actor; if actor_name is provided, will also search the current editor world).",
         inputSchema: {
           type: "object",
           properties: {

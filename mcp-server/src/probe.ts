@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { envSchema } from "./mcp.js";
 import { UnrealClient } from "./unreal-client.js";
 

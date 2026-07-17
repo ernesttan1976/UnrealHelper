@@ -14,11 +14,14 @@
 #include "Selection.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
+#include "Policies/CondensedJsonPrintPolicy.h"
 
 #include "Components/SceneComponent.h"
 #include "GameFramework/Actor.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
+#include "EngineUtils.h"
 
 #include <atomic>
 
@@ -28,7 +31,8 @@ namespace
   constexpr float kAcceptSleepSeconds = 0.01f;
   constexpr double kGameThreadWaitSeconds = 2.0;
 
-  TSharedPtr<FJsonObject> MakeError(const FString& RequestId, const FString& Code, const FString& Message)
+  // Avoid naming collisions with UE helpers like `MakeError(...)`.
+  TSharedPtr<FJsonObject> MakeJsonErrorResponse(const FString& RequestId, const FString& Code, const FString& Message)
   {
     TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetNumberField(TEXT("protocol_version"), 1);
@@ -42,7 +46,7 @@ namespace
     return Root;
   }
 
-  TSharedPtr<FJsonObject> MakeSuccess(const FString& RequestId, TSharedPtr<FJsonObject> Result)
+  TSharedPtr<FJsonObject> MakeJsonSuccessResponse(const FString& RequestId, TSharedPtr<FJsonObject> Result)
   {
     TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetNumberField(TEXT("protocol_version"), 1);
@@ -55,7 +59,9 @@ namespace
   FString ToLine(const TSharedPtr<FJsonObject>& Obj)
   {
     FString Out;
-    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    // The TCP protocol is newline-delimited, so the JSON itself must not contain newlines.
+    const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+      TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Out);
     FJsonSerializer::Serialize(Obj.ToSharedRef(), Writer);
     Out.AppendChar(TEXT('\n'));
     return Out;
@@ -146,7 +152,7 @@ namespace
             A->SetArrayField(TEXT("rotation"), RotToJson(Actor->GetActorRotation()));
             A->SetArrayField(TEXT("scale"), VecToJson(Actor->GetActorScale3D()));
             A->SetBoolField(TEXT("hidden"), Actor->IsHidden());
-            A->SetBoolField(TEXT("pending_kill"), Actor->IsPendingKill());
+            A->SetBoolField(TEXT("pending_kill"), Actor->IsPendingKillPending());
             Actors.Add(MakeShared<FJsonValueObject>(A));
           }
         }
@@ -158,19 +164,67 @@ namespace
         AActor* Target = nullptr;
         if (GEditor)
         {
-          USelection* Selection = GEditor->GetSelectedActors();
-          for (FSelectionIterator It(*Selection); It; ++It)
+          AActor* FirstSelected = nullptr;
+          if (USelection* Selection = GEditor->GetSelectedActors())
           {
-            AActor* Actor = Cast<AActor>(*It);
-            if (!Actor)
+            for (FSelectionIterator It(*Selection); It; ++It)
             {
-              continue;
-            }
+              AActor* Actor = Cast<AActor>(*It);
+              if (!Actor)
+              {
+                continue;
+              }
 
-            if (ActorName.IsEmpty() || Actor->GetName() == ActorName)
+              if (!FirstSelected)
+              {
+                FirstSelected = Actor;
+              }
+
+              if (!ActorName.IsEmpty() && Actor->GetName() == ActorName)
+              {
+                Target = Actor;
+                break;
+              }
+            }
+          }
+
+          if (!Target && ActorName.IsEmpty())
+          {
+            Target = FirstSelected;
+          }
+
+          // If an explicit actor_name was provided but it wasn't selected, fall back to a best-effort world scan.
+          if (!Target && !ActorName.IsEmpty())
+          {
+            UWorld* World = GEditor->GetEditorWorldContext().World();
+            if (World)
             {
-              Target = Actor;
-              break;
+              AActor* ContainsMatch = nullptr;
+              for (TActorIterator<AActor> It(World); It; ++It)
+              {
+                AActor* Actor = *It;
+                if (!Actor)
+                {
+                  continue;
+                }
+
+                const FString Name = Actor->GetName();
+                if (Name == ActorName)
+                {
+                  Target = Actor;
+                  break;
+                }
+
+                if (!ContainsMatch && Name.Contains(ActorName, ESearchCase::IgnoreCase))
+                {
+                  ContainsMatch = Actor;
+                }
+              }
+
+              if (!Target)
+              {
+                Target = ContainsMatch;
+              }
             }
           }
         }
@@ -344,12 +398,12 @@ private:
       Buffer = Buffer.Mid(NewlineIndex + 1);
 
       TSharedPtr<FJsonObject> Req;
-      if (!ParseJsonLine(Line, Req))
-      {
-        const FString ErrLine = ToLine(MakeError(TEXT(""), TEXT("INVALID_REQUEST"), TEXT("Invalid JSON")));
+       if (!ParseJsonLine(Line, Req))
+       {
+        const FString ErrLine = ToLine(MakeJsonErrorResponse(TEXT(""), TEXT("INVALID_REQUEST"), TEXT("Invalid JSON")));
         SendLine(Client, ErrLine);
         return;
-      }
+       }
 
       FString RequestId;
       FString InToken;
@@ -358,25 +412,25 @@ private:
       const bool bHasRequestId = Req->TryGetStringField(TEXT("request_id"), RequestId);
       const bool bHasToken = Req->TryGetStringField(TEXT("token"), InToken);
       const bool bHasMethod = Req->TryGetStringField(TEXT("method"), Method);
-      if (!bHasRequestId || !bHasToken || !bHasMethod)
-      {
-        SendLine(Client, ToLine(MakeError(TEXT(""), TEXT("INVALID_REQUEST"), TEXT("Missing required fields"))));
+       if (!bHasRequestId || !bHasToken || !bHasMethod)
+       {
+        SendLine(Client, ToLine(MakeJsonErrorResponse(TEXT(""), TEXT("INVALID_REQUEST"), TEXT("Missing required fields"))));
         return;
-      }
+       }
 
-      if (InToken != Token)
-      {
-        SendLine(Client, ToLine(MakeError(RequestId, TEXT("UNAUTHORIZED"), TEXT("Bad token"))));
+       if (InToken != Token)
+       {
+        SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("UNAUTHORIZED"), TEXT("Bad token"))));
         return;
-      }
+       }
 
-      if (Method == TEXT("ping"))
-      {
-        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-        Result->SetBoolField(TEXT("pong"), true);
-        SendLine(Client, ToLine(MakeSuccess(RequestId, Result)));
-        return;
-      }
+       if (Method == TEXT("ping"))
+       {
+         TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+         Result->SetBoolField(TEXT("pong"), true);
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
+         return;
+       }
 
       if (Method == TEXT("get_editor_status") || Method == TEXT("get_engine_version") || Method == TEXT("get_current_project"))
       {
@@ -384,11 +438,11 @@ private:
         TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, TEXT(""), bCompleted);
         if (!bCompleted || !Result.IsValid())
         {
-          SendLine(Client, ToLine(MakeError(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
           return;
         }
 
-        SendLine(Client, ToLine(MakeSuccess(RequestId, Result)));
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
         return;
       }
 
@@ -398,28 +452,28 @@ private:
         TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, TEXT(""), bCompleted);
         if (!bCompleted || !Result.IsValid())
         {
-          SendLine(Client, ToLine(MakeError(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
           return;
         }
 
-        SendLine(Client, ToLine(MakeSuccess(RequestId, Result)));
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
         return;
       }
 
       if (Method == TEXT("get_component_tree"))
       {
         FString ActorName;
-        TSharedPtr<FJsonObject> Params;
-        if (Req->TryGetObjectField(TEXT("params"), Params) && Params.IsValid())
+        const TSharedPtr<FJsonObject>* ParamsPtr = nullptr;
+        if (Req->TryGetObjectField(TEXTVIEW("params"), ParamsPtr) && ParamsPtr && ParamsPtr->IsValid())
         {
-          Params->TryGetStringField(TEXT("actor_name"), ActorName);
+          (*ParamsPtr)->TryGetStringField(TEXTVIEW("actor_name"), ActorName);
         }
 
         bool bCompleted = false;
         TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, ActorName, bCompleted);
         if (!bCompleted || !Result.IsValid())
         {
-          SendLine(Client, ToLine(MakeError(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
           return;
         }
 
@@ -428,15 +482,15 @@ private:
         Result->TryGetStringField(TEXT("actor"), OutActor);
         if (OutActor.IsEmpty())
         {
-          SendLine(Client, ToLine(MakeError(RequestId, TEXT("ACTOR_NOT_FOUND"), TEXT("No matching selected actor"))));
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("ACTOR_NOT_FOUND"), TEXT("No matching actor (selection or actor_name)"))));
           return;
         }
 
-        SendLine(Client, ToLine(MakeSuccess(RequestId, Result)));
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
         return;
       }
 
-      SendLine(Client, ToLine(MakeError(RequestId, TEXT("INVALID_REQUEST"), TEXT("Unknown method"))));
+      SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("INVALID_REQUEST"), TEXT("Unknown method"))));
       return;
     }
   }
