@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "unreal": {
+      "type": "local",
+      "command": ["node", "--enable-source-maps", "dist/index.js"],
+      "cwd": "mcp-server",
+      "enabled": true,
+      "timeout": 15000
+    }
+  }
+}

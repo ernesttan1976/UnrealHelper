@@ -9,13 +9,22 @@ import {
 
 import { envSchema } from "./mcp.js";
 import { UnrealClient } from "./unreal-client.js";
+import { resolveUnrealConfigFromProject } from "./unreal-project-config.js";
 
 const env = envSchema.parse(process.env);
 
+const resolved = resolveUnrealConfigFromProject({
+  token: env.UNREAL_TOKEN,
+  port: env.UNREAL_PORT,
+  projectDir: env.UNREAL_PROJECT_DIR,
+  tokenIni: env.UNREAL_TOKEN_INI,
+  envPortProvided: typeof process.env.UNREAL_PORT === "string" && process.env.UNREAL_PORT.length > 0
+});
+
 const client = new UnrealClient({
   host: env.UNREAL_HOST,
-  port: env.UNREAL_PORT,
-  token: env.UNREAL_TOKEN,
+  port: resolved.port,
+  token: resolved.token,
   timeoutMs: env.UNREAL_TIMEOUT_MS,
   mock: env.UNREAL_MOCK === "1" || env.UNREAL_MOCK === "true"
 });

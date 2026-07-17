@@ -129,7 +129,7 @@ Write-Host "Engine:  $engineRootResolved"
 Write-Host "Target:  ${projectName}Editor $Platform $Configuration"
 
 # Step 2.2: copy plugin into <Project>/Plugins/UnrealDebugCopilot
-& (Join-Path $repoRoot "scripts/install-plugin.ps1") $uprojectPath
+& (Join-Path $repoRoot "scripts/install-plugin.ps1") (Split-Path -Parent $uprojectPath)
 
 # Step 2.3: build the Editor target so the plugin compiles
 $buildBat = Join-Path $engineRootResolved "Engine/Build/BatchFiles/Build.bat"

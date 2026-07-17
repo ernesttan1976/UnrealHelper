@@ -1,0 +1,19 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.0.1",
+  "FriendlyName": "Unreal Debug Copilot",
+  "Description": "Local-only debugging copilot endpoint for Unreal Editor.",
+  "Category": "Debugging",
+  "CreatedBy": "UnrealHelper",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "UnrealDebugCopilotEditor",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit"
+    }
+  ]
+}

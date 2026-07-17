@@ -37,6 +37,18 @@ UNREAL_MOCK=1 node dist/index.js
 UNREAL_HOST=127.0.0.1 UNREAL_PORT=17777 UNREAL_TOKEN=<token> node dist/index.js
 ```
 
+### Option: auto-load token from project dir
+
+If you set `UNREAL_PROJECT_DIR` to your Unreal project directory, the server will try to read
+`[UnrealDebugCopilot] Token` (and `Port` if `UNREAL_PORT` is not explicitly set) from the project's
+`EditorPerProjectUserSettings.ini`.
+
+Example:
+
+```bash
+UNREAL_PROJECT_DIR="D:/UEProjects/MyGame" node dist/probe.js
+```
+
 ## Using a .env file
 
 From `mcp-server/`, create `.env` (see `.env.example`) and then run:

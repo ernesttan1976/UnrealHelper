@@ -5,6 +5,7 @@ Plugin path: `unreal-plugin/UnrealDebugCopilot`
 ## Install (UE 5.6)
 
 1. Copy `unreal-plugin/UnrealDebugCopilot` into your Unreal project at `Plugins/UnrealDebugCopilot`.
+   (Optional: `powershell -ExecutionPolicy Bypass -File scripts/install-plugin.ps1 -ProjectDir <path-to-your-project>`)
 2. Enable it in the editor (Edit → Plugins).
 3. Restart the editor.
 
