@@ -771,17 +771,10 @@ namespace
       }
       else if (Method == TEXT("get_editor_mode"))
       {
-        TArray<TSharedPtr<FJsonValue>> Active;
-        if (GEditor)
-        {
-          TArray<FEditorModeID> ModeIds;
-          GLevelEditorModeTools().GetActiveModeIDs(ModeIds);
-          for (const FEditorModeID& Id : ModeIds)
-          {
-            Active.Add(MakeShared<FJsonValueString>(Id.ToString()));
-          }
-        }
-        Result->SetArrayField(TEXT("active_mode_ids"), Active);
+        // UE 5.6: FEditorModeTools doesn't expose a simple public "GetActiveModeIDs" API.
+        // Keeping this tool best-effort (and compile-safe) until we add a more direct editor integration.
+        Result->SetArrayField(TEXT("active_mode_ids"), TArray<TSharedPtr<FJsonValue>>());
+        Result->SetStringField(TEXT("note"), TEXT("Not yet implemented: active editor modes are not exported."));
       }
       else if (Method == TEXT("get_dirty_assets"))
       {
