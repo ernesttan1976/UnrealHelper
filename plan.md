@@ -1,5 +1,23 @@
 # Unreal Debugging Copilot — Build Plan
 
+## 0. Current Status (2026-07-17)
+
+Completed (repo-side):
+
+* `mcp-server/` typechecks and builds.
+* `mcp-server/` probe runs in mock mode (`UNREAL_MOCK=1`) and returns structured JSON for:
+  * `ping`, `get_editor_status`, `get_engine_version`, `get_current_project`, `get_selected_actors`, `get_open_editors`, `get_active_blueprint`, `get_component_tree`.
+* `unreal-plugin/UnrealDebugCopilot` exists as an Editor plugin stub exposing a localhost-only, line-delimited JSON request/response server (port `17777`) with a per-project token.
+
+Not yet verified (UE-side):
+
+* Plugin compiled/installed in a real UE 5.6 project.
+* End-to-end connectivity from `mcp-server/` to the live Unreal Editor.
+
+Next step (to unlock Phase 0 acceptance test):
+
+* Install the plugin into a UE 5.6 project, enable it, confirm Output Log shows the listening port + token, then run `mcp-server` against the live plugin and exercise `unreal.ping` + `unreal.get_editor_status`.
+
 ## 1. Product definition
 
 Build a **local, read-first debugging copilot** for Unreal Engine that allows an agent in OpenCode to:

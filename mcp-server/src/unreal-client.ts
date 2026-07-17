@@ -98,6 +98,14 @@ export class UnrealClient {
     return this.request("get_selected_actors");
   }
 
+  async getOpenEditors(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_open_editors");
+  }
+
+  async getActiveBlueprint(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_active_blueprint");
+  }
+
   async getComponentTree(params?: { actor_name?: string }): Promise<UnrealJsonRpcResponse> {
     return this.request("get_component_tree", params);
   }
@@ -140,6 +148,22 @@ export class UnrealClient {
         request_id,
         ok: true,
         result: { actor: "", components: [] }
+      };
+    }
+    if (method === "get_open_editors") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { editors: [] }
+      };
+    }
+    if (method === "get_active_blueprint") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: false,
+        error: { code: "BLUEPRINT_NOT_FOUND", message: "No Blueprint asset editor is open" }
       };
     }
     return {

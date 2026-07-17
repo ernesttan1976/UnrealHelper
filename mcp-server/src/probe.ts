@@ -20,6 +20,8 @@ async function main() {
     ["get_engine_version", () => client.getEngineVersion()],
     ["get_current_project", () => client.getCurrentProject()],
     ["get_selected_actors", () => client.getSelectedActors()],
+    ["get_open_editors", () => client.getOpenEditors()],
+    ["get_active_blueprint", () => client.getActiveBlueprint()],
     ["get_component_tree", () => client.getComponentTree()]
   ];
 

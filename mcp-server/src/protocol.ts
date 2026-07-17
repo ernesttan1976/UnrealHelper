@@ -33,6 +33,7 @@ export type UnrealJsonRpcFailure = {
       | "REQUEST_TIMEOUT"
       | "INVALID_REQUEST"
       | "ACTOR_NOT_FOUND"
+      | "BLUEPRINT_NOT_FOUND"
       | "INTERNAL_UNREAL_ERROR";
     message: string;
     details?: Record<string, unknown>;

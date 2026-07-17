@@ -18,7 +18,9 @@
 #include "Policies/CondensedJsonPrintPolicy.h"
 
 #include "Components/SceneComponent.h"
+#include "Engine/Blueprint.h"
 #include "GameFramework/Actor.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 #include "EngineUtils.h"
@@ -158,6 +160,80 @@ namespace
         }
 
         Result->SetArrayField(TEXT("actors"), Actors);
+      }
+      else if (Method == TEXT("get_open_editors"))
+      {
+        TArray<TSharedPtr<FJsonValue>> Editors;
+        if (GEditor)
+        {
+          UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+          if (AssetEditorSubsystem)
+          {
+            const TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
+            for (UObject* Asset : EditedAssets)
+            {
+              if (!Asset)
+              {
+                continue;
+              }
+
+              TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+              Obj->SetStringField(TEXT("name"), Asset->GetName());
+              Obj->SetStringField(TEXT("class"), Asset->GetClass() ? Asset->GetClass()->GetName() : TEXT(""));
+              Obj->SetStringField(TEXT("object_path"), Asset->GetPathName());
+              Obj->SetStringField(TEXT("asset_path"), Asset->GetOutermost() ? Asset->GetOutermost()->GetName() : TEXT(""));
+              Editors.Add(MakeShared<FJsonValueObject>(Obj));
+            }
+          }
+        }
+
+        Result->SetArrayField(TEXT("editors"), Editors);
+      }
+      else if (Method == TEXT("get_active_blueprint"))
+      {
+        FString AssetPath;
+        FString ObjectPath;
+        int32 OpenBlueprintCount = 0;
+
+        if (GEditor)
+        {
+          UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+          if (AssetEditorSubsystem)
+          {
+            TArray<UBlueprint*> Blueprints;
+            const TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
+            for (UObject* Asset : EditedAssets)
+            {
+              if (UBlueprint* BP = Cast<UBlueprint>(Asset))
+              {
+                Blueprints.Add(BP);
+              }
+            }
+
+            Blueprints.Sort([](const UBlueprint& A, const UBlueprint& B) {
+              return A.GetPathName() < B.GetPathName();
+            });
+
+            OpenBlueprintCount = Blueprints.Num();
+            if (Blueprints.Num() > 0)
+            {
+              UBlueprint* Chosen = Blueprints[0];
+              ObjectPath = Chosen->GetPathName();
+              AssetPath = Chosen->GetOutermost() ? Chosen->GetOutermost()->GetName() : TEXT("");
+            }
+          }
+        }
+
+        Result->SetStringField(TEXT("asset_path"), AssetPath);
+        Result->SetStringField(TEXT("object_path"), ObjectPath);
+        Result->SetNumberField(TEXT("open_blueprint_count"), OpenBlueprintCount);
+        if (OpenBlueprintCount > 1)
+        {
+          Result->SetStringField(
+            TEXT("note"),
+            TEXT("Multiple Blueprint editors are open; returning the first Blueprint by object path sort (not necessarily focused).")
+          );
+        }
       }
       else if (Method == TEXT("get_component_tree"))
       {
@@ -439,6 +515,42 @@ private:
         if (!bCompleted || !Result.IsValid())
         {
           SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          return;
+        }
+
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
+        return;
+      }
+
+      if (Method == TEXT("get_open_editors"))
+      {
+        bool bCompleted = false;
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, TEXT(""), bCompleted);
+        if (!bCompleted || !Result.IsValid())
+        {
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          return;
+        }
+
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
+        return;
+      }
+
+      if (Method == TEXT("get_active_blueprint"))
+      {
+        bool bCompleted = false;
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, TEXT(""), bCompleted);
+        if (!bCompleted || !Result.IsValid())
+        {
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          return;
+        }
+
+        FString AssetPath;
+        Result->TryGetStringField(TEXT("asset_path"), AssetPath);
+        if (AssetPath.IsEmpty())
+        {
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("BLUEPRINT_NOT_FOUND"), TEXT("No Blueprint asset editor is open"))));
           return;
         }
 

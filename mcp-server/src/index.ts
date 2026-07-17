@@ -61,6 +61,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: { type: "object", properties: {}, additionalProperties: false }
       },
       {
+        name: "unreal.get_open_editors",
+        description: "List assets that currently have an editor open (asset editors).",
+        inputSchema: { type: "object", properties: {}, additionalProperties: false }
+      },
+      {
+        name: "unreal.get_active_blueprint",
+        description:
+          "Get the Blueprint currently being edited (best-effort: if multiple are open, returns a deterministic choice).",
+        inputSchema: { type: "object", properties: {}, additionalProperties: false }
+      },
+      {
         name: "unreal.get_component_tree",
         description:
           "Get the component tree for an actor (default: first selected actor; if actor_name is provided, will also search the current editor world).",
@@ -111,6 +122,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "unreal.get_selected_actors") {
       const res = await client.getSelectedActors();
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_open_editors") {
+      const res = await client.getOpenEditors();
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_active_blueprint") {
+      const res = await client.getActiveBlueprint();
       return asToolResult(res);
     }
 

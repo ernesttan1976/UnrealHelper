@@ -9,3 +9,4 @@
 **/.vs/
 .env
 
+mcp-server/.env
