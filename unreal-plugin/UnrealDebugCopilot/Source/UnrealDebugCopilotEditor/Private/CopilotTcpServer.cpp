@@ -27,6 +27,7 @@
 #include "FileHelpers.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SWindow.h"
+#include "EditorModeManager.h"
 
 #include "Components/SceneComponent.h"
 #include "Engine/Blueprint.h"
@@ -37,6 +38,7 @@
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 #include "EngineUtils.h"
+#include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 #include "EdGraph/EdGraphPin.h"
 
@@ -932,7 +934,16 @@ namespace
 
         if (!ClassName.IsEmpty())
         {
-          if (UClass* Class = FindObject<UClass>(ANY_PACKAGE, *ClassName))
+          // ANY_PACKAGE is deprecated; prefer a global search.
+          UClass* Class = FindFirstObject<UClass>(*ClassName, EFindFirstObjectOptions::None);
+          if (!Class)
+          {
+            // Common fallback: Engine script classes.
+            const FString EnginePath = FString::Printf(TEXT("/Script/Engine.%s"), *ClassName);
+            Class = FindObject<UClass>(nullptr, *EnginePath);
+          }
+
+          if (Class)
           {
             Filter.ClassPaths.Add(Class->GetClassPathName());
           }
