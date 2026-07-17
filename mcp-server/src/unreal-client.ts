@@ -22,6 +22,12 @@ export class UnrealClient {
       return this.#mock(method, params);
     }
 
+    if (!this.#opts.token) {
+      throw new Error(
+        "UNREAL_TOKEN is required (set it to the token printed in the Unreal Output Log, or set UNREAL_MOCK=1 to run without Unreal)."
+      );
+    }
+
     const requestId = randomUUID();
     const payload: UnrealJsonRpcRequest = {
       protocol_version: 1,

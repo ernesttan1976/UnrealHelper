@@ -79,36 +79,45 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const name = request.params.name;
 
+  const asToolResult = (res: unknown) => {
+    // We always return JSON text so the model can reason about structured data.
+    // If Unreal returns ok:false we also mark the MCP tool call as an error.
+    if (typeof res === "object" && res !== null && "ok" in res && (res as any).ok === false) {
+      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], isError: true };
+    }
+    return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+  };
+
   try {
     if (name === "unreal.ping") {
       const res = await client.ping();
-      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      return asToolResult(res);
     }
 
     if (name === "unreal.get_editor_status") {
       const res = await client.getEditorStatus();
-      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      return asToolResult(res);
     }
 
     if (name === "unreal.get_engine_version") {
       const res = await client.getEngineVersion();
-      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      return asToolResult(res);
     }
 
     if (name === "unreal.get_current_project") {
       const res = await client.getCurrentProject();
-      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      return asToolResult(res);
     }
 
     if (name === "unreal.get_selected_actors") {
       const res = await client.getSelectedActors();
-      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      return asToolResult(res);
     }
 
     if (name === "unreal.get_component_tree") {
       const args = (request.params.arguments ?? {}) as { actor_name?: string };
       const res = await client.getComponentTree({ actor_name: args.actor_name });
-      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      return asToolResult(res);
     }
 
     return {
