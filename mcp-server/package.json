@@ -11,6 +11,7 @@
     "dev": "node --enable-source-maps dist/index.js",
     "start": "node --enable-source-maps dist/index.js",
     "probe": "node --enable-source-maps dist/probe.js",
+    "test:priority": "node --enable-source-maps dist/test-priority.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
