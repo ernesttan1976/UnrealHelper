@@ -36,3 +36,11 @@ UNREAL_MOCK=1 node dist/index.js
 ```bash
 UNREAL_HOST=127.0.0.1 UNREAL_PORT=17777 UNREAL_TOKEN=<token> node dist/index.js
 ```
+
+## Probe (recommended)
+
+Runs a small sequence of direct TCP calls (bypassing MCP) so you can validate connectivity quickly.
+
+```bash
+UNREAL_HOST=127.0.0.1 UNREAL_PORT=17777 UNREAL_TOKEN=<token> node dist/probe.js
+```
