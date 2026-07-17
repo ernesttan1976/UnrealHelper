@@ -10,6 +10,9 @@ Current tools:
 * `unreal.get_current_project`
 * `unreal.get_selected_actors`
 * `unreal.get_component_tree`
+* `unreal.list_assets`
+* `unreal.inspect_object`
+* `unreal.inspect_blueprint`
 
 ## Build
 

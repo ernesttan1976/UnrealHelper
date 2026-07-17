@@ -1,6 +1,8 @@
 #include "CopilotTcpServer.h"
 
 #include "Async/Async.h"
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Dom/JsonObject.h"
 #include "Editor.h"
 #include "Engine/Selection.h"
@@ -11,6 +13,7 @@
 #include "Misc/Paths.h"
 #include "Misc/App.h"
 #include "Misc/EngineVersion.h"
+#include "Misc/PackageName.h"
 #include "Selection.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -19,11 +22,15 @@
 
 #include "Components/SceneComponent.h"
 #include "Engine/Blueprint.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
 #include "GameFramework/Actor.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 #include "EngineUtils.h"
+#include "UObject/UnrealType.h"
+#include "EdGraph/EdGraphPin.h"
 
 #include <atomic>
 
@@ -32,6 +39,169 @@ namespace
   constexpr int32 kMaxLineBytes = 256 * 1024;
   constexpr float kAcceptSleepSeconds = 0.01f;
   constexpr double kGameThreadWaitSeconds = 2.0;
+
+  FString GetShortAssetNameFromPackagePath(const FString& AssetPath)
+  {
+    // "/Game/Foo/Bar" -> "Bar"
+    return FPackageName::GetShortName(AssetPath);
+  }
+
+  FString NormalizeToObjectPath(const FString& ObjectOrAssetPath)
+  {
+    // If it already looks like an object path "/Game/X/Y.Asset", keep it.
+    if (ObjectOrAssetPath.Contains(TEXT(".")))
+    {
+      return ObjectOrAssetPath;
+    }
+
+    // Otherwise treat it as a package path and form "/Game/X/Y.Y".
+    const FString ShortName = GetShortAssetNameFromPackagePath(ObjectOrAssetPath);
+    if (ShortName.IsEmpty())
+    {
+      return ObjectOrAssetPath;
+    }
+    return ObjectOrAssetPath + TEXT(".") + ShortName;
+  }
+
+  UObject* LoadObjectByPathBestEffort(const FString& ObjectOrAssetPath)
+  {
+    if (ObjectOrAssetPath.IsEmpty())
+    {
+      return nullptr;
+    }
+
+    const FString ObjectPath = NormalizeToObjectPath(ObjectOrAssetPath);
+    return StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath);
+  }
+
+  AActor* FindActorBestEffort(const FString& ActorName)
+  {
+    if (!GEditor)
+    {
+      return nullptr;
+    }
+
+    // Prefer selection (exact match), then fallback to editor world scan.
+    if (USelection* Selection = GEditor->GetSelectedActors())
+    {
+      for (FSelectionIterator It(*Selection); It; ++It)
+      {
+        if (AActor* Actor = Cast<AActor>(*It))
+        {
+          if (Actor->GetName() == ActorName)
+          {
+            return Actor;
+          }
+        }
+      }
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+      return nullptr;
+    }
+
+    AActor* ContainsMatch = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+      AActor* Actor = *It;
+      if (!Actor)
+      {
+        continue;
+      }
+
+      const FString Name = Actor->GetName();
+      if (Name == ActorName)
+      {
+        return Actor;
+      }
+      if (!ContainsMatch && Name.Contains(ActorName, ESearchCase::IgnoreCase))
+      {
+        ContainsMatch = Actor;
+      }
+    }
+
+    return ContainsMatch;
+  }
+
+  FString PinTypeToString(const FEdGraphPinType& T)
+  {
+    FString Base = T.PinCategory.ToString();
+    if (!T.PinSubCategory.IsNone())
+    {
+      Base += TEXT(":");
+      Base += T.PinSubCategory.ToString();
+    }
+    if (T.PinSubCategoryObject.IsValid())
+    {
+      Base += TEXT(":");
+      Base += T.PinSubCategoryObject->GetName();
+    }
+
+    switch (T.ContainerType)
+    {
+      case EPinContainerType::Array: return FString::Printf(TEXT("TArray<%s>"), *Base);
+      case EPinContainerType::Set: return FString::Printf(TEXT("TSet<%s>"), *Base);
+      case EPinContainerType::Map:
+      {
+        const FString Key = T.PinValueType.TerminalCategory.ToString();
+        return FString::Printf(TEXT("TMap<%s,%s>"), *Key, *Base);
+      }
+      default: return Base;
+    }
+  }
+
+  TArray<TSharedPtr<FJsonValue>> ExportObjectProperties(UObject* Obj, bool bIncludeTransient, int32 MaxProperties, const FString& NameContains)
+  {
+    TArray<TSharedPtr<FJsonValue>> Out;
+    if (!Obj || !Obj->GetClass())
+    {
+      return Out;
+    }
+
+    int32 Added = 0;
+    for (TFieldIterator<FProperty> It(Obj->GetClass()); It; ++It)
+    {
+      if (Added >= MaxProperties)
+      {
+        break;
+      }
+
+      FProperty* Prop = *It;
+      if (!Prop)
+      {
+        continue;
+      }
+
+      if (!bIncludeTransient && Prop->HasAnyPropertyFlags(CPF_Transient | CPF_DuplicateTransient | CPF_NonPIEDuplicateTransient))
+      {
+        continue;
+      }
+
+      const FString PropName = Prop->GetName();
+      if (!NameContains.IsEmpty() && !PropName.Contains(NameContains, ESearchCase::IgnoreCase))
+      {
+        continue;
+      }
+
+      FString ValueStr;
+      const void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(Obj);
+      if (ValuePtr)
+      {
+        Prop->ExportTextItem_Direct(ValueStr, ValuePtr, nullptr, Obj, PPF_None);
+      }
+
+      TSharedPtr<FJsonObject> P = MakeShared<FJsonObject>();
+      P->SetStringField(TEXT("name"), PropName);
+      P->SetStringField(TEXT("type"), Prop->GetCPPType());
+      P->SetStringField(TEXT("value"), ValueStr);
+      Out.Add(MakeShared<FJsonValueObject>(P));
+      Added++;
+    }
+
+    return Out;
+  }
 
   // Avoid naming collisions with UE helpers like `MakeError(...)`.
   TSharedPtr<FJsonObject> MakeJsonErrorResponse(const FString& RequestId, const FString& Code, const FString& Message)
@@ -99,12 +269,12 @@ namespace
   }
 
   // Runs on the server thread. Most Unreal APIs require the game thread.
-  TSharedPtr<FJsonObject> HandleOnGameThreadBlocking(const FString& Method, const FString& ActorName, bool& bCompleted)
+  TSharedPtr<FJsonObject> HandleOnGameThreadBlocking(const FString& Method, const TSharedPtr<FJsonObject>& Params, bool& bCompleted)
   {
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     FEvent* Done = FPlatformProcess::GetSynchEventFromPool(true);
 
-    AsyncTask(ENamedThreads::GameThread, [Done, &Result, Method, ActorName]() {
+    AsyncTask(ENamedThreads::GameThread, [Done, &Result, Method, Params]() {
       if (Method == TEXT("get_editor_status"))
       {
         bool bEditorReady = (GEditor != nullptr);
@@ -237,72 +407,34 @@ namespace
       }
       else if (Method == TEXT("get_component_tree"))
       {
-        AActor* Target = nullptr;
-        if (GEditor)
+        FString ActorName;
+        if (Params.IsValid())
         {
-          AActor* FirstSelected = nullptr;
-          if (USelection* Selection = GEditor->GetSelectedActors())
+          Params->TryGetStringField(TEXT("actor_name"), ActorName);
+        }
+
+        AActor* Target = nullptr;
+        if (ActorName.IsEmpty())
+        {
+          // Default: first selected actor.
+          if (GEditor)
           {
-            for (FSelectionIterator It(*Selection); It; ++It)
+            if (USelection* Selection = GEditor->GetSelectedActors())
             {
-              AActor* Actor = Cast<AActor>(*It);
-              if (!Actor)
+              for (FSelectionIterator It(*Selection); It; ++It)
               {
-                continue;
-              }
-
-              if (!FirstSelected)
-              {
-                FirstSelected = Actor;
-              }
-
-              if (!ActorName.IsEmpty() && Actor->GetName() == ActorName)
-              {
-                Target = Actor;
-                break;
-              }
-            }
-          }
-
-          if (!Target && ActorName.IsEmpty())
-          {
-            Target = FirstSelected;
-          }
-
-          // If an explicit actor_name was provided but it wasn't selected, fall back to a best-effort world scan.
-          if (!Target && !ActorName.IsEmpty())
-          {
-            UWorld* World = GEditor->GetEditorWorldContext().World();
-            if (World)
-            {
-              AActor* ContainsMatch = nullptr;
-              for (TActorIterator<AActor> It(World); It; ++It)
-              {
-                AActor* Actor = *It;
-                if (!Actor)
-                {
-                  continue;
-                }
-
-                const FString Name = Actor->GetName();
-                if (Name == ActorName)
+                if (AActor* Actor = Cast<AActor>(*It))
                 {
                   Target = Actor;
                   break;
                 }
-
-                if (!ContainsMatch && Name.Contains(ActorName, ESearchCase::IgnoreCase))
-                {
-                  ContainsMatch = Actor;
-                }
-              }
-
-              if (!Target)
-              {
-                Target = ContainsMatch;
               }
             }
           }
+        }
+        else
+        {
+          Target = FindActorBestEffort(ActorName);
         }
 
         Result->SetStringField(TEXT("actor"), Target ? Target->GetName() : TEXT(""));
@@ -345,6 +477,271 @@ namespace
         }
 
         Result->SetArrayField(TEXT("components"), Components);
+      }
+      else if (Method == TEXT("list_assets"))
+      {
+        FString Path = TEXT("/Game");
+        FString ClassName;
+        bool bRecursive = true;
+        int32 Limit = 200;
+        FString NameContains;
+
+        if (Params.IsValid())
+        {
+          Params->TryGetStringField(TEXT("path"), Path);
+          Params->TryGetStringField(TEXT("class"), ClassName);
+          Params->TryGetBoolField(TEXT("recursive"), bRecursive);
+          double LimitNum = 0;
+          if (Params->TryGetNumberField(TEXT("limit"), LimitNum))
+          {
+            Limit = static_cast<int32>(LimitNum);
+          }
+          Params->TryGetStringField(TEXT("name_contains"), NameContains);
+        }
+
+        if (Limit <= 0)
+        {
+          Limit = 200;
+        }
+        Limit = FMath::Min(Limit, 2000);
+
+        TArray<TSharedPtr<FJsonValue>> Assets;
+        FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+        IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+        FARFilter Filter;
+        Filter.PackagePaths.Add(*Path);
+        Filter.bRecursivePaths = bRecursive;
+
+        if (!ClassName.IsEmpty())
+        {
+          if (UClass* Class = FindObject<UClass>(ANY_PACKAGE, *ClassName))
+          {
+            Filter.ClassPaths.Add(Class->GetClassPathName());
+          }
+          else
+          {
+            Result->SetStringField(TEXT("class_note"), TEXT("Class filter not resolved (expected a UClass name like 'Blueprint' or 'StaticMesh'). Ignoring class filter."));
+          }
+        }
+
+        TArray<FAssetData> Found;
+        AssetRegistry.GetAssets(Filter, Found);
+
+        int32 Added = 0;
+        for (const FAssetData& A : Found)
+        {
+          if (Added >= Limit)
+          {
+            break;
+          }
+
+          const FString AssetName = A.AssetName.ToString();
+          if (!NameContains.IsEmpty() && !AssetName.Contains(NameContains, ESearchCase::IgnoreCase))
+          {
+            continue;
+          }
+
+          TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+          Obj->SetStringField(TEXT("name"), AssetName);
+          Obj->SetStringField(TEXT("class"), A.AssetClassPath.ToString());
+          Obj->SetStringField(TEXT("asset_path"), A.PackageName.ToString());
+          Obj->SetStringField(TEXT("object_path"), A.GetObjectPathString());
+          Assets.Add(MakeShared<FJsonValueObject>(Obj));
+          Added++;
+        }
+
+        Result->SetArrayField(TEXT("assets"), Assets);
+        Result->SetNumberField(TEXT("returned"), Added);
+        Result->SetNumberField(TEXT("matched"), Found.Num());
+      }
+      else if (Method == TEXT("inspect_object"))
+      {
+        FString ObjectPath;
+        FString AssetPath;
+        FString ActorName;
+        bool bIncludeTransient = false;
+        int32 MaxProperties = 200;
+        FString NameContains;
+
+        if (Params.IsValid())
+        {
+          Params->TryGetStringField(TEXT("object_path"), ObjectPath);
+          Params->TryGetStringField(TEXT("asset_path"), AssetPath);
+          Params->TryGetStringField(TEXT("actor_name"), ActorName);
+          Params->TryGetBoolField(TEXT("include_transient"), bIncludeTransient);
+          double MaxPropsNum = 0;
+          if (Params->TryGetNumberField(TEXT("max_properties"), MaxPropsNum))
+          {
+            MaxProperties = static_cast<int32>(MaxPropsNum);
+          }
+          Params->TryGetStringField(TEXT("name_contains"), NameContains);
+        }
+
+        UObject* Obj = nullptr;
+        if (!ActorName.IsEmpty())
+        {
+          Obj = FindActorBestEffort(ActorName);
+        }
+        else if (!ObjectPath.IsEmpty())
+        {
+          Obj = LoadObjectByPathBestEffort(ObjectPath);
+        }
+        else if (!AssetPath.IsEmpty())
+        {
+          Obj = LoadObjectByPathBestEffort(AssetPath);
+        }
+
+        Result->SetStringField(TEXT("name"), Obj ? Obj->GetName() : TEXT(""));
+        Result->SetStringField(TEXT("class"), Obj && Obj->GetClass() ? Obj->GetClass()->GetName() : TEXT(""));
+        Result->SetStringField(TEXT("object_path"), Obj ? Obj->GetPathName() : TEXT(""));
+        Result->SetStringField(TEXT("asset_path"), Obj && Obj->GetOutermost() ? Obj->GetOutermost()->GetName() : TEXT(""));
+        Result->SetStringField(TEXT("outer"), Obj && Obj->GetOuter() ? Obj->GetOuter()->GetPathName() : TEXT(""));
+
+        MaxProperties = FMath::Clamp(MaxProperties, 0, 2000);
+        Result->SetArrayField(TEXT("properties"), ExportObjectProperties(Obj, bIncludeTransient, MaxProperties, NameContains));
+      }
+      else if (Method == TEXT("inspect_blueprint"))
+      {
+        FString ObjectPath;
+        FString AssetPath;
+        bool bIncludeCdoProperties = false;
+        bool bIncludeTransient = false;
+        int32 MaxProperties = 200;
+        FString NameContains;
+        bool bUseActiveIfMissing = true;
+
+        if (Params.IsValid())
+        {
+          Params->TryGetStringField(TEXT("object_path"), ObjectPath);
+          Params->TryGetStringField(TEXT("asset_path"), AssetPath);
+          Params->TryGetBoolField(TEXT("include_cdo_properties"), bIncludeCdoProperties);
+          Params->TryGetBoolField(TEXT("include_transient"), bIncludeTransient);
+          double MaxPropsNum = 0;
+          if (Params->TryGetNumberField(TEXT("max_properties"), MaxPropsNum))
+          {
+            MaxProperties = static_cast<int32>(MaxPropsNum);
+          }
+          Params->TryGetStringField(TEXT("name_contains"), NameContains);
+          Params->TryGetBoolField(TEXT("use_active_if_missing"), bUseActiveIfMissing);
+        }
+
+        UBlueprint* BP = nullptr;
+        if (!ObjectPath.IsEmpty())
+        {
+          BP = Cast<UBlueprint>(LoadObjectByPathBestEffort(ObjectPath));
+        }
+        else if (!AssetPath.IsEmpty())
+        {
+          BP = Cast<UBlueprint>(LoadObjectByPathBestEffort(AssetPath));
+        }
+        else if (bUseActiveIfMissing && GEditor)
+        {
+          UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+          if (AssetEditorSubsystem)
+          {
+            TArray<UBlueprint*> Blueprints;
+            const TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
+            for (UObject* Asset : EditedAssets)
+            {
+              if (UBlueprint* EditedBP = Cast<UBlueprint>(Asset))
+              {
+                Blueprints.Add(EditedBP);
+              }
+            }
+            Blueprints.Sort([](const UBlueprint& A, const UBlueprint& B) {
+              return A.GetPathName() < B.GetPathName();
+            });
+            if (Blueprints.Num() > 0)
+            {
+              BP = Blueprints[0];
+            }
+          }
+        }
+
+        Result->SetStringField(TEXT("name"), BP ? BP->GetName() : TEXT(""));
+        Result->SetStringField(TEXT("class"), BP && BP->GetClass() ? BP->GetClass()->GetName() : TEXT(""));
+        Result->SetStringField(TEXT("object_path"), BP ? BP->GetPathName() : TEXT(""));
+        Result->SetStringField(TEXT("asset_path"), BP && BP->GetOutermost() ? BP->GetOutermost()->GetName() : TEXT(""));
+        Result->SetStringField(TEXT("parent_class"), BP && BP->ParentClass ? BP->ParentClass->GetPathName() : TEXT(""));
+        Result->SetStringField(TEXT("generated_class"), BP && BP->GeneratedClass ? BP->GeneratedClass->GetPathName() : TEXT(""));
+        Result->SetStringField(TEXT("blueprint_type"), BP ? StaticEnum<EBlueprintType>()->GetNameStringByValue(static_cast<int64>(BP->BlueprintType)) : TEXT(""));
+
+        TArray<TSharedPtr<FJsonValue>> Vars;
+        TArray<TSharedPtr<FJsonValue>> FunctionGraphs;
+        TArray<TSharedPtr<FJsonValue>> MacroGraphs;
+        TArray<TSharedPtr<FJsonValue>> UbergraphPages;
+        TArray<TSharedPtr<FJsonValue>> Components;
+
+        if (BP)
+        {
+          for (const FBPVariableDescription& V : BP->NewVariables)
+          {
+            TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+            Obj->SetStringField(TEXT("name"), V.VarName.ToString());
+            Obj->SetStringField(TEXT("type"), PinTypeToString(V.VarType));
+            Obj->SetStringField(TEXT("category"), V.Category.ToString());
+            Obj->SetBoolField(TEXT("instance_editable"), V.PropertyFlags & CPF_Edit);
+            Vars.Add(MakeShared<FJsonValueObject>(Obj));
+          }
+
+          for (UEdGraph* G : BP->FunctionGraphs)
+          {
+            if (G)
+            {
+              FunctionGraphs.Add(MakeShared<FJsonValueString>(G->GetName()));
+            }
+          }
+          for (UEdGraph* G : BP->MacroGraphs)
+          {
+            if (G)
+            {
+              MacroGraphs.Add(MakeShared<FJsonValueString>(G->GetName()));
+            }
+          }
+          for (UEdGraph* G : BP->UbergraphPages)
+          {
+            if (G)
+            {
+              UbergraphPages.Add(MakeShared<FJsonValueString>(G->GetName()));
+            }
+          }
+
+          if (USimpleConstructionScript* SCS = BP->SimpleConstructionScript)
+          {
+            UBlueprintGeneratedClass* BPGC = Cast<UBlueprintGeneratedClass>(BP->GeneratedClass);
+            TArray<USCS_Node*> Nodes = SCS->GetAllNodes();
+            for (USCS_Node* N : Nodes)
+            {
+              if (!N)
+              {
+                continue;
+              }
+
+              UActorComponent* Template = BPGC ? N->GetActualComponentTemplate(BPGC) : nullptr;
+              TSharedPtr<FJsonObject> C = MakeShared<FJsonObject>();
+              C->SetStringField(TEXT("name"), N->GetVariableName().ToString());
+              C->SetStringField(TEXT("component_class"), Template && Template->GetClass() ? Template->GetClass()->GetName() : TEXT(""));
+              C->SetStringField(TEXT("parent"), N->GetParent() ? N->GetParent()->GetVariableName().ToString() : TEXT(""));
+              C->SetStringField(TEXT("attach_socket"), N->GetAttachToName().ToString());
+              Components.Add(MakeShared<FJsonValueObject>(C));
+            }
+          }
+        }
+
+        Result->SetArrayField(TEXT("variables"), Vars);
+        Result->SetArrayField(TEXT("function_graphs"), FunctionGraphs);
+        Result->SetArrayField(TEXT("macro_graphs"), MacroGraphs);
+        Result->SetArrayField(TEXT("ubergraph_pages"), UbergraphPages);
+        Result->SetArrayField(TEXT("components"), Components);
+
+        if (BP && bIncludeCdoProperties && BP->GeneratedClass)
+        {
+          UObject* CDO = BP->GeneratedClass->GetDefaultObject();
+          MaxProperties = FMath::Clamp(MaxProperties, 0, 2000);
+          Result->SetArrayField(TEXT("cdo_properties"), ExportObjectProperties(CDO, bIncludeTransient, MaxProperties, NameContains));
+          Result->SetStringField(TEXT("cdo_object_path"), CDO ? CDO->GetPathName() : TEXT(""));
+        }
       }
 
       Done->Trigger();
@@ -504,18 +901,25 @@ private:
         return;
        }
 
-       if (Method == TEXT("ping"))
-       {
+      if (Method == TEXT("ping"))
+      {
          TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
          Result->SetBoolField(TEXT("pong"), true);
         SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
          return;
-       }
+      }
+
+      const TSharedPtr<FJsonObject>* ParamsPtr = nullptr;
+      TSharedPtr<FJsonObject> Params;
+      if (Req->TryGetObjectField(TEXTVIEW("params"), ParamsPtr) && ParamsPtr && ParamsPtr->IsValid())
+      {
+        Params = *ParamsPtr;
+      }
 
       if (Method == TEXT("get_editor_status") || Method == TEXT("get_engine_version") || Method == TEXT("get_current_project"))
       {
         bool bCompleted = false;
-        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, TEXT(""), bCompleted);
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, nullptr, bCompleted);
         if (!bCompleted || !Result.IsValid())
         {
           SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
@@ -529,7 +933,7 @@ private:
       if (Method == TEXT("get_open_editors"))
       {
         bool bCompleted = false;
-        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, TEXT(""), bCompleted);
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, nullptr, bCompleted);
         if (!bCompleted || !Result.IsValid())
         {
           SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
@@ -543,7 +947,7 @@ private:
       if (Method == TEXT("get_active_blueprint"))
       {
         bool bCompleted = false;
-        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, TEXT(""), bCompleted);
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, nullptr, bCompleted);
         if (!bCompleted || !Result.IsValid())
         {
           SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
@@ -565,7 +969,7 @@ private:
       if (Method == TEXT("get_selected_actors"))
       {
         bool bCompleted = false;
-        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, TEXT(""), bCompleted);
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, nullptr, bCompleted);
         if (!bCompleted || !Result.IsValid())
         {
           SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
@@ -578,15 +982,8 @@ private:
 
       if (Method == TEXT("get_component_tree"))
       {
-        FString ActorName;
-        const TSharedPtr<FJsonObject>* ParamsPtr = nullptr;
-        if (Req->TryGetObjectField(TEXTVIEW("params"), ParamsPtr) && ParamsPtr && ParamsPtr->IsValid())
-        {
-          (*ParamsPtr)->TryGetStringField(TEXTVIEW("actor_name"), ActorName);
-        }
-
         bool bCompleted = false;
-        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, ActorName, bCompleted);
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, Params, bCompleted);
         if (!bCompleted || !Result.IsValid())
         {
           SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
@@ -600,6 +997,32 @@ private:
         {
           SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("ACTOR_NOT_FOUND"), TEXT("No matching actor (selection or actor_name)"))));
           return;
+        }
+
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
+        return;
+      }
+
+      if (Method == TEXT("list_assets") || Method == TEXT("inspect_object") || Method == TEXT("inspect_blueprint"))
+      {
+        bool bCompleted = false;
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, Params, bCompleted);
+        if (!bCompleted || !Result.IsValid())
+        {
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          return;
+        }
+
+        // For inspect_* fail fast when no object is found.
+        if (Method == TEXT("inspect_object") || Method == TEXT("inspect_blueprint"))
+        {
+          FString OutObjectPath;
+          Result->TryGetStringField(TEXT("object_path"), OutObjectPath);
+          if (OutObjectPath.IsEmpty())
+          {
+            SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("OBJECT_NOT_FOUND"), TEXT("Object not found (check object_path/asset_path/actor_name)"))));
+            return;
+          }
         }
 
         SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));

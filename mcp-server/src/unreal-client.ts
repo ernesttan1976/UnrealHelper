@@ -110,6 +110,39 @@ export class UnrealClient {
     return this.request("get_component_tree", params);
   }
 
+  async listAssets(params?: {
+    path?: string;
+    class?: string;
+    recursive?: boolean;
+    limit?: number;
+    name_contains?: string;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("list_assets", params);
+  }
+
+  async inspectObject(params?: {
+    object_path?: string;
+    asset_path?: string;
+    actor_name?: string;
+    include_transient?: boolean;
+    max_properties?: number;
+    name_contains?: string;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("inspect_object", params);
+  }
+
+  async inspectBlueprint(params?: {
+    object_path?: string;
+    asset_path?: string;
+    include_cdo_properties?: boolean;
+    include_transient?: boolean;
+    max_properties?: number;
+    name_contains?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("inspect_blueprint", params);
+  }
+
   #mock(method: string, _params?: Record<string, unknown>): UnrealJsonRpcResponse {
     const request_id = randomUUID();
     if (method === "ping") {
@@ -164,6 +197,30 @@ export class UnrealClient {
         request_id,
         ok: false,
         error: { code: "BLUEPRINT_NOT_FOUND", message: "No Blueprint asset editor is open" }
+      };
+    }
+    if (method === "list_assets") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { assets: [], returned: 0, matched: 0 }
+      };
+    }
+    if (method === "inspect_object") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: false,
+        error: { code: "OBJECT_NOT_FOUND", message: "Object not found (mock)" }
+      };
+    }
+    if (method === "inspect_blueprint") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: false,
+        error: { code: "BLUEPRINT_NOT_FOUND", message: "No Blueprint asset editor is open (mock)" }
       };
     }
     return {

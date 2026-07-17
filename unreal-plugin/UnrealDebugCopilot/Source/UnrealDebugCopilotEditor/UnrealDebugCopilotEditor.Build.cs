@@ -9,6 +9,7 @@ public class UnrealDebugCopilotEditor : ModuleRules
     PrivateDependencyModuleNames.AddRange(
       new string[]
       {
+        "AssetRegistry",
         "Core",
         "CoreUObject",
         "Engine",

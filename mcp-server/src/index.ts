@@ -91,6 +91,60 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           additionalProperties: false
         }
+      },
+      {
+        name: "unreal.list_assets",
+        description:
+          "List assets via the Asset Registry (no direct .uasset reads).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Package path, e.g. /Game or /Game/ThirdPerson" },
+            class: { type: "string", description: "Optional UClass name filter, e.g. Blueprint, StaticMesh" },
+            recursive: { type: "boolean", description: "Whether to recurse into subpaths (default true)." },
+            limit: { type: "number", description: "Max number of results returned (default 200, max 2000)." },
+            name_contains: { type: "string", description: "Optional substring filter on asset name." }
+          },
+          additionalProperties: false
+        }
+      },
+      {
+        name: "unreal.inspect_object",
+        description:
+          "Inspect a UObject (or Actor by name) using Unreal reflection (no direct .uasset reads).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            object_path: { type: "string", description: "Object path, e.g. /Game/Foo/Bar.Bar" },
+            asset_path: { type: "string", description: "Asset package path, e.g. /Game/Foo/Bar" },
+            actor_name: { type: "string", description: "Actor name in the editor world (best-effort search)." },
+            include_transient: { type: "boolean", description: "Include transient properties (default false)." },
+            max_properties: { type: "number", description: "Max properties exported (default 200, max 2000)." },
+            name_contains: { type: "string", description: "Only include properties whose name contains this substring." }
+          },
+          additionalProperties: false
+        }
+      },
+      {
+        name: "unreal.inspect_blueprint",
+        description:
+          "Inspect a Blueprint asset (variables, graphs, SCS components; optionally CDO properties).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            object_path: { type: "string", description: "Blueprint object path, e.g. /Game/Foo/BP_My.BP_My" },
+            asset_path: { type: "string", description: "Blueprint asset package path, e.g. /Game/Foo/BP_My" },
+            include_cdo_properties: { type: "boolean", description: "If true, also exports properties from the generated class CDO." },
+            include_transient: { type: "boolean", description: "Include transient properties (default false)." },
+            max_properties: { type: "number", description: "Max CDO properties exported (default 200, max 2000)." },
+            name_contains: { type: "string", description: "Only include CDO properties whose name contains this substring." },
+            use_active_if_missing: {
+              type: "boolean",
+              description: "If no path is provided, uses the first open Blueprint editor asset if available (default true)."
+            }
+          },
+          additionalProperties: false
+        }
       }
     ]
   };
@@ -147,6 +201,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === "unreal.get_component_tree") {
       const args = (request.params.arguments ?? {}) as { actor_name?: string };
       const res = await client.getComponentTree({ actor_name: args.actor_name });
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.list_assets") {
+      const args = (request.params.arguments ?? {}) as {
+        path?: string;
+        class?: string;
+        recursive?: boolean;
+        limit?: number;
+        name_contains?: string;
+      };
+      const res = await client.listAssets(args);
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.inspect_object") {
+      const args = (request.params.arguments ?? {}) as {
+        object_path?: string;
+        asset_path?: string;
+        actor_name?: string;
+        include_transient?: boolean;
+        max_properties?: number;
+        name_contains?: string;
+      };
+      const res = await client.inspectObject(args);
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.inspect_blueprint") {
+      const args = (request.params.arguments ?? {}) as {
+        object_path?: string;
+        asset_path?: string;
+        include_cdo_properties?: boolean;
+        include_transient?: boolean;
+        max_properties?: number;
+        name_contains?: string;
+        use_active_if_missing?: boolean;
+      };
+      const res = await client.inspectBlueprint(args);
       return asToolResult(res);
     }
 
