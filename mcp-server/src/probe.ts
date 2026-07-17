@@ -39,6 +39,8 @@ async function main() {
     ["get_editor_status", () => client.getEditorStatus()],
     ["get_engine_version", () => client.getEngineVersion()],
     ["get_current_project", () => client.getCurrentProject()],
+    ["get_plugin_version", () => client.getPluginVersion()],
+    ["get_protocol_capabilities", () => client.getProtocolCapabilities()],
     ["get_selected_actors", () => client.getSelectedActors()],
     ["get_open_editors", () => client.getOpenEditors()],
     ["get_active_blueprint", () => client.getActiveBlueprint()],

@@ -12,6 +12,17 @@ type UnrealClientOptions = {
 
 export class UnrealClient {
   #opts: UnrealClientOptions;
+  #inFlight = new Map<
+    string,
+    {
+      method: string;
+      startedAtMs: number;
+      socket: net.Socket;
+      timeout: NodeJS.Timeout;
+      reject: (err: unknown) => void;
+    }
+  >();
+  #lastIssuedRequestId: string | null = null;
 
   constructor(opts: UnrealClientOptions) {
     this.#opts = opts;
@@ -29,6 +40,7 @@ export class UnrealClient {
     }
 
     const requestId = randomUUID();
+    this.#lastIssuedRequestId = requestId;
     const payload: UnrealJsonRpcRequest = {
       protocol_version: 1,
       request_id: requestId,
@@ -42,13 +54,30 @@ export class UnrealClient {
 
     const line = JSON.stringify(payload) + "\n";
 
-    const response = await new Promise<UnrealJsonRpcResponse>((resolve, reject) => {
+    return await new Promise<UnrealJsonRpcResponse>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        this.#inFlight.delete(requestId);
         socket.destroy();
         reject(new Error(`Unreal request timed out after ${this.#opts.timeoutMs}ms`));
       }, this.#opts.timeoutMs);
 
+      this.#inFlight.set(requestId, {
+        method,
+        startedAtMs: Date.now(),
+        socket,
+        timeout,
+        reject
+      });
+
       let buffer = "";
+
+      const cleanup = () => {
+        const entry = this.#inFlight.get(requestId);
+        if (entry) {
+          clearTimeout(entry.timeout);
+          this.#inFlight.delete(requestId);
+        }
+      };
 
       socket.on("data", (chunk) => {
         buffer += chunk.toString("utf8");
@@ -56,7 +85,7 @@ export class UnrealClient {
         if (idx === -1) return;
         const line = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 1);
-        clearTimeout(timeout);
+        cleanup();
         socket.destroy();
         try {
           resolve(JSON.parse(line) as UnrealJsonRpcResponse);
@@ -66,7 +95,7 @@ export class UnrealClient {
       });
 
       socket.on("error", (err) => {
-        clearTimeout(timeout);
+        cleanup();
         reject(err);
       });
 
@@ -74,8 +103,6 @@ export class UnrealClient {
         socket.write(line);
       });
     });
-
-    return response;
   }
 
   async ping(): Promise<UnrealJsonRpcResponse> {
@@ -92,6 +119,14 @@ export class UnrealClient {
 
   async getCurrentProject(): Promise<UnrealJsonRpcResponse> {
     return this.request("get_current_project");
+  }
+
+  async getPluginVersion(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_plugin_version");
+  }
+
+  async getProtocolCapabilities(): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_protocol_capabilities");
   }
 
   async getSelectedActors(): Promise<UnrealJsonRpcResponse> {
@@ -143,10 +178,83 @@ export class UnrealClient {
     return this.request("inspect_blueprint", params);
   }
 
+  cancelCurrentOperation(params?: { request_id?: string }): {
+    cancelled: string[];
+  } {
+    const toCancel: string[] = [];
+
+    if (params?.request_id) {
+      if (this.#inFlight.has(params.request_id)) {
+        toCancel.push(params.request_id);
+      }
+    } else if (this.#lastIssuedRequestId && this.#inFlight.has(this.#lastIssuedRequestId)) {
+      toCancel.push(this.#lastIssuedRequestId);
+    } else {
+      // As a fallback, cancel the oldest in-flight request.
+      let oldest: { id: string; startedAtMs: number } | null = null;
+      for (const [id, entry] of this.#inFlight.entries()) {
+        if (!oldest || entry.startedAtMs < oldest.startedAtMs) {
+          oldest = { id, startedAtMs: entry.startedAtMs };
+        }
+      }
+      if (oldest) toCancel.push(oldest.id);
+    }
+
+    for (const id of toCancel) {
+      const entry = this.#inFlight.get(id);
+      if (!entry) continue;
+      clearTimeout(entry.timeout);
+      this.#inFlight.delete(id);
+      entry.socket.destroy();
+      entry.reject(new Error("Cancelled"));
+    }
+
+    return { cancelled: toCancel };
+  }
+
+  getInFlightSummary(): Array<{ request_id: string; method: string; started_at_ms: number }> {
+    const out: Array<{ request_id: string; method: string; started_at_ms: number }> = [];
+    for (const [request_id, entry] of this.#inFlight.entries()) {
+      out.push({ request_id, method: entry.method, started_at_ms: entry.startedAtMs });
+    }
+    out.sort((a, b) => a.started_at_ms - b.started_at_ms);
+    return out;
+  }
+
   #mock(method: string, _params?: Record<string, unknown>): UnrealJsonRpcResponse {
     const request_id = randomUUID();
     if (method === "ping") {
       return { protocol_version: 1, request_id, ok: true, result: { pong: true } };
+    }
+    if (method === "get_plugin_version") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: {
+          plugin_name: "UnrealDebugCopilot",
+          plugin_version: "0.0.1",
+          protocol_version: 1
+        }
+      };
+    }
+    if (method === "get_protocol_capabilities") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: {
+          protocol_version: 1,
+          supported_methods: [
+            "ping",
+            "get_editor_status",
+            "get_engine_version",
+            "get_current_project",
+            "get_plugin_version",
+            "get_protocol_capabilities"
+          ]
+        }
+      };
     }
     if (method === "get_engine_version") {
       return { protocol_version: 1, request_id, ok: true, result: { engine_version: "5.6.x" } };

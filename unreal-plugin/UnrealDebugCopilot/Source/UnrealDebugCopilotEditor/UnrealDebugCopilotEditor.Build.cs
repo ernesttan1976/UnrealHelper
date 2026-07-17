@@ -13,6 +13,7 @@ public class UnrealDebugCopilotEditor : ModuleRules
         "Core",
         "CoreUObject",
         "Engine",
+        "Projects",
         "Slate",
         "SlateCore",
         "UnrealEd",

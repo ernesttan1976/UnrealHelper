@@ -5,9 +5,19 @@ MCP server exposing a small set of Unreal Editor debugging tools.
 Current tools:
 
 * `unreal.ping`
+* `unreal.get_connection_status`
+* `unreal.get_last_tool_error`
+* `unreal.cancel_current_operation`
+* `unreal.get_protocol_capabilities`
+* `unreal.get_plugin_version`
+* `unreal.get_active_debug_session`
+* `unreal.start_debug_session`
+* `unreal.end_debug_session`
+* `unreal.clear_debug_session`
 * `unreal.get_editor_status`
 * `unreal.get_engine_version`
 * `unreal.get_current_project`
+* `unreal.get_project_info`
 * `unreal.get_selected_actors`
 * `unreal.get_component_tree`
 * `unreal.list_assets`

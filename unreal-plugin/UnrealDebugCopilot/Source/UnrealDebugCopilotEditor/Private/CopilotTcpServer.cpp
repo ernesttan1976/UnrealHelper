@@ -14,6 +14,7 @@
 #include "Misc/App.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/PackageName.h"
+#include "Interfaces/IPluginManager.h"
 #include "Selection.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -302,6 +303,48 @@ namespace
       {
         Result->SetStringField(TEXT("project_name"), FApp::GetProjectName());
         Result->SetStringField(TEXT("project_dir"), FPaths::ProjectDir());
+      }
+      else if (Method == TEXT("get_plugin_version"))
+      {
+        Result->SetStringField(TEXT("plugin_name"), TEXT("UnrealDebugCopilot"));
+        Result->SetNumberField(TEXT("protocol_version"), 1);
+
+        TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("UnrealDebugCopilot"));
+        if (Plugin.IsValid())
+        {
+          const FPluginDescriptor& Desc = Plugin->GetDescriptor();
+          Result->SetStringField(TEXT("plugin_version"), Desc.VersionName);
+          Result->SetNumberField(TEXT("plugin_version_number"), Desc.Version);
+          Result->SetStringField(TEXT("plugin_friendly_name"), Desc.FriendlyName);
+        }
+      }
+      else if (Method == TEXT("get_protocol_capabilities"))
+      {
+        Result->SetNumberField(TEXT("protocol_version"), 1);
+
+        // Keep this in sync with the server-side dispatch; it's a best-effort introspection surface.
+        const TCHAR* Methods[] = {
+          TEXT("ping"),
+          TEXT("get_editor_status"),
+          TEXT("get_engine_version"),
+          TEXT("get_current_project"),
+          TEXT("get_plugin_version"),
+          TEXT("get_protocol_capabilities"),
+          TEXT("get_open_editors"),
+          TEXT("get_active_blueprint"),
+          TEXT("get_selected_actors"),
+          TEXT("get_component_tree"),
+          TEXT("list_assets"),
+          TEXT("inspect_object"),
+          TEXT("inspect_blueprint")
+        };
+
+        TArray<TSharedPtr<FJsonValue>> Supported;
+        for (const TCHAR* M : Methods)
+        {
+          Supported.Add(MakeShared<FJsonValueString>(M));
+        }
+        Result->SetArrayField(TEXT("supported_methods"), Supported);
       }
       else if (Method == TEXT("get_selected_actors"))
       {
@@ -722,8 +765,9 @@ namespace
               TSharedPtr<FJsonObject> C = MakeShared<FJsonObject>();
               C->SetStringField(TEXT("name"), N->GetVariableName().ToString());
               C->SetStringField(TEXT("component_class"), Template && Template->GetClass() ? Template->GetClass()->GetName() : TEXT(""));
-              C->SetStringField(TEXT("parent"), N->GetParent() ? N->GetParent()->GetVariableName().ToString() : TEXT(""));
-              C->SetStringField(TEXT("attach_socket"), N->GetAttachToName().ToString());
+              // USCS_Node no longer exposes GetParent()/GetAttachToName() in UE 5.6; use the public fields instead.
+              C->SetStringField(TEXT("parent"), N->ParentComponentOrVariableName.ToString());
+              C->SetStringField(TEXT("attach_socket"), N->AttachToName.ToString());
               Components.Add(MakeShared<FJsonValueObject>(C));
             }
           }
@@ -916,12 +960,14 @@ private:
         Params = *ParamsPtr;
       }
 
-      if (Method == TEXT("get_editor_status") || Method == TEXT("get_engine_version") || Method == TEXT("get_current_project"))
-      {
-        bool bCompleted = false;
-        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, nullptr, bCompleted);
-        if (!bCompleted || !Result.IsValid())
-        {
+       if (
+         Method == TEXT("get_editor_status") || Method == TEXT("get_engine_version") || Method == TEXT("get_current_project") ||
+         Method == TEXT("get_plugin_version") || Method == TEXT("get_protocol_capabilities"))
+       {
+         bool bCompleted = false;
+         TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, nullptr, bCompleted);
+         if (!bCompleted || !Result.IsValid())
+         {
           SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
           return;
         }
