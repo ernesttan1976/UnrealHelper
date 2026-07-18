@@ -1,38 +1,49 @@
-Revised Scene Plan (Sound + Instability + Standard/Custom Split)
+Scene Plan (Storyboard-Aligned): “The Sixth Sense”
+
 Scene Intent
-The lieutenant evacuates because the sensory pattern is wrong: the house is too hot, too quiet, and the floor feels alive, and water has no effect. The collapse is the proof.
+The lieutenant evacuates because the situation’s pattern is wrong (water has little effect, living room heat is too high, the interior is too quiet). The floor collapse proves the hidden basement fire.
+
+Core Cues (The “Sixth Sense”)
+1. Fire not reacting as expected
+2. Living room hotter than it should be
+3. Very quiet... too quiet
+4. The whole pattern doesn’t fit
+
 Actors (Mostly Standard Assets)
-1. Lieutenant: decision-maker; listens more than talks in the key moment.
-2. Nozzle firefighter: water application feedback (“no effect”) and stream changes.
-3. Backup firefighter: hose management; first to comment on heat/comfort.
-4. Door/control firefighter: anchors egress; confirms everyone is out.
-5. Optional exterior IC (radio voice): adds radio texture and urgency.
-Environment (Custom Where It Matters)
-1. One-story house with living room sitting over a basement fire pocket.
-2. Floor system built to: flex subtly, then fail (custom fracture/animation setup + debris set).
-3. Acoustic “baffle” concept: the floor/insulation muffles the basement roar until collapse.
-4. Heat routing: hottest area is living room, not kitchen (drives the mismatch).
-Sound Design as the Main Storytelling Channel
-1. Exterior bed (noisy): siren tailoff, pump, distant voices, radio chatter.
-2. Interior bed (wrong): radio squelch and breathing are too prominent; fire is oddly muted for the heat.
-3. Water moments: expected hiss/knockdown is missing; instead you get stubborn low roar + weak reaction.
-4. Evacuation call: lieutenant’s command cuts cleanly through soundscape.
-5. Collapse payoff: muffling drops; sudden full roar + structural groan + debris impacts.
-Instability Through Shaking/Movement (Second Storytelling Channel)
-1. Early: mild low-frequency rumble + tiny prop jitter (dust, hanging lamp sway).
-2. Regroup beat: one noticeable floor “give” under the lieutenant during the pause (the body-feel cue).
-3. Evacuation: shakes reduce slightly as they move off the danger zone (reinforces “get off it”).
-4. Post-exit: violent shake + tilt + dust blast + collapse sequence.
-Beat-by-Beat (Interactions Focused on Cues)
-1. Approach/Entry: loud exterior → interior becomes unexpectedly “dead.” Lieutenant clocks the quiet.
-2. Advance to Rear: nozzle sees kitchen fire; lieutenant expects a normal response.
-3. First Water Application: minimal effect. Nozzle reports it; lieutenant stores it (no speechifying).
-4. Second Application + Heat Check: still no effect; living room heat reads wrong. Quiet persists.
-5. Regroup (Key Decision Moment): they step back; a distinct floor shudder/flex hits. Lieutenant decides.
-6. Evacuation Command: short, absolute order. Door/control leads the retreat; backup pulls hose; nozzle stops flow.
-7. Threshold Clear: last person clears the doorway.
-8. Collapse Payoff: living room floor drops into basement; sound opens up into a roar; debris/dust outward.
-9. Aftermath Button: brief silence after impact, then radios/voices spike; lieutenant’s “sixth sense” is re-framed as experience reading anomalies.
+1. Lieutenant: point/decision-maker; minimal dialog until the evacuation order.
+2. Nozzle firefighter: applies water; calls out lack of reaction.
+3. Backup firefighter: manages hose; mirrors the lieutenant’s pause/regroup.
+4. Door/control firefighter: anchors egress; confirms everyone clears.
+5. Optional exterior IC (radio voice): adds radio texture/urgency.
+
+Environment / Key Setup (Custom Where It Matters)
+1. Simple one-story house; light smoke from the back of the house.
+2. Back door entry leads toward the kitchen.
+3. Living room sits over a basement that is (unknown to crew) fully involved.
+4. Floor acts like an acoustic baffle: muffles basement roar until failure.
+5. Floor failure system: subtle flex/give cues, then sudden collapse + debris/dust.
+
+Storyboard Beats (Match the Concept Art)
+1. APPROACH: Establish exterior; crew staged with hose; light smoke from rear.
+2. ENTRY: Lieutenant leads the hose crew in through the back door toward the kitchen; exterior noise drops away.
+3. INITIAL ATTACK: Nozzle hits visible kitchen fire; water reaction is weak; fire roars back with little knockdown.
+4. REGROUP: They back out a few steps to reassess; the lieutenant lingers, reading the room.
+5. THE SIXTH SENSE: Quiet interior despite oppressive heat; subtle floor “wrongness” (rumble/settle). Cues land (list above).
+6. ORDER TO EVACUATE: Short, absolute command; standard move when cues don’t add up. Nozzle stops flow; backup manages hose; door/control leads the retreat.
+7. FLOOR COLLAPSES: As the last firefighter clears, the floor where they were operating suddenly drops.
+8. BASEMENT FIRE REVEALED: Through the opening: fully involved basement fire; clear implication they would have fallen in.
+
+Sound + Motion Notes (Driven by the Art)
+1. Exterior: siren tail-off, pump, distant voices.
+2. Interior: breathing/gear/radio are too prominent; fire bed is strangely muted.
+3. Water: missing “good” hiss/steam/knockdown; instead a stubborn roar.
+4. Regroup: add a distinct low-frequency floor groan/settle underfoot.
+5. Collapse: muffling drops out; sudden full roar + structural groan + debris impacts + dust burst.
+
+Notes / Lesson (End Card Voice/Subtitle)
+Experience + pattern recognition + intuition (sixth sense) prevented a disaster.
+When cues don’t fit the pattern, stop, reassess, and get out.
+
 Asset Split (Practical)
 1. Standard: firefighters, gear, hose/nozzle, radio VO, generic fire/smoke, common furniture.
-2. Custom: house layout, basement relationship, floor failure system, debris set, acoustic/occlusion tuning, heat “hot zone” staging.
+2. Custom: house layout + basement relationship, floor failure system + debris, acoustic/occlusion tuning, heat staging.
