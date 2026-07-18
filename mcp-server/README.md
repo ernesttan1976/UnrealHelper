@@ -24,6 +24,14 @@ Current tools:
 * `unreal.inspect_object`
 * `unreal.inspect_blueprint`
 
+Blueprint static inspection (Priority 2):
+
+* `unreal.get_blueprint_summary`
+* `unreal.get_blueprint_metadata`
+* `unreal.get_blueprint_graph`
+* `unreal.get_blueprint_dependencies`
+* `unreal.get_blueprint_dependents`
+
 ## Build
 
 From `mcp-server/`:
@@ -82,7 +90,7 @@ UNREAL_HOST=127.0.0.1 UNREAL_PORT=17777 UNREAL_TOKEN=<token> node dist/probe.js
 ```
 cd mcp-server
 npm run build
-npm run test:priority -- --priority 1
+npm run test:priority -- --priority 2
 ```
 
 

@@ -33,6 +33,7 @@
 #include "Engine/Blueprint.h"
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
+#include "Engine/TimelineTemplate.h"
 #include "GameFramework/Actor.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "Sockets.h"
@@ -41,6 +42,9 @@
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 #include "EdGraph/EdGraphPin.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraph/EdGraphNode.h"
+#include "EdGraphNode_Comment.h"
 
 #include <atomic>
 
@@ -160,6 +164,122 @@ namespace
       }
       default: return Base;
     }
+  }
+
+  UBlueprint* ResolveBlueprintBestEffort(const TSharedPtr<FJsonObject>& Params)
+  {
+    FString ObjectPath;
+    FString AssetPath;
+    bool bUseActiveIfMissing = true;
+
+    if (Params.IsValid())
+    {
+      Params->TryGetStringField(TEXT("object_path"), ObjectPath);
+      Params->TryGetStringField(TEXT("asset_path"), AssetPath);
+      Params->TryGetBoolField(TEXT("use_active_if_missing"), bUseActiveIfMissing);
+    }
+
+    UBlueprint* BP = nullptr;
+    if (!ObjectPath.IsEmpty())
+    {
+      BP = Cast<UBlueprint>(LoadObjectByPathBestEffort(ObjectPath));
+    }
+    else if (!AssetPath.IsEmpty())
+    {
+      BP = Cast<UBlueprint>(LoadObjectByPathBestEffort(AssetPath));
+    }
+    else if (bUseActiveIfMissing && GEditor)
+    {
+      UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+      if (AssetEditorSubsystem)
+      {
+        TArray<UBlueprint*> Blueprints;
+        const TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
+        for (UObject* Asset : EditedAssets)
+        {
+          if (UBlueprint* EditedBP = Cast<UBlueprint>(Asset))
+          {
+            Blueprints.Add(EditedBP);
+          }
+        }
+        Blueprints.Sort([](const UBlueprint& A, const UBlueprint& B) {
+          return A.GetPathName() < B.GetPathName();
+        });
+        if (Blueprints.Num() > 0)
+        {
+          BP = Blueprints[0];
+        }
+      }
+    }
+
+    return BP;
+  }
+
+  UEdGraph* ResolveGraphBestEffort(UBlueprint* BP, const FString& GraphName, FString& OutGraphType)
+  {
+    OutGraphType = TEXT("unknown");
+    if (!BP)
+    {
+      return nullptr;
+    }
+
+    auto FindByName = [&GraphName](const TArray<UEdGraph*>& Graphs) -> UEdGraph* {
+      for (UEdGraph* G : Graphs)
+      {
+        if (G && !GraphName.IsEmpty() && G->GetName() == GraphName)
+        {
+          return G;
+        }
+      }
+      return nullptr;
+    };
+
+    if (!GraphName.IsEmpty())
+    {
+      if (UEdGraph* G = FindByName(BP->UbergraphPages))
+      {
+        OutGraphType = TEXT("ubergraph");
+        return G;
+      }
+      if (UEdGraph* G = FindByName(BP->FunctionGraphs))
+      {
+        OutGraphType = TEXT("function");
+        return G;
+      }
+      if (UEdGraph* G = FindByName(BP->MacroGraphs))
+      {
+        OutGraphType = TEXT("macro");
+        return G;
+      }
+    }
+
+    if (BP->UbergraphPages.Num() > 0 && BP->UbergraphPages[0])
+    {
+      OutGraphType = TEXT("ubergraph");
+      return BP->UbergraphPages[0];
+    }
+    if (BP->FunctionGraphs.Num() > 0 && BP->FunctionGraphs[0])
+    {
+      OutGraphType = TEXT("function");
+      return BP->FunctionGraphs[0];
+    }
+    if (BP->MacroGraphs.Num() > 0 && BP->MacroGraphs[0])
+    {
+      OutGraphType = TEXT("macro");
+      return BP->MacroGraphs[0];
+    }
+
+    return nullptr;
+  }
+
+  bool IsExecPin(const UEdGraphPin* Pin)
+  {
+    if (!Pin)
+    {
+      return false;
+    }
+    // Avoid BlueprintGraph module dependency; K2 exec pins use category "exec".
+    return Pin->PinType.PinCategory == FName(TEXT("exec"));
   }
 
   TArray<TSharedPtr<FJsonValue>> ExportObjectProperties(UObject* Obj, bool bIncludeTransient, int32 MaxProperties, const FString& NameContains)
@@ -358,11 +478,14 @@ namespace
           TEXT("get_dirty_assets"),
           TEXT("get_pending_editor_notifications"),
           TEXT("get_message_log_summary"),
-          TEXT("get_component_tree"),
-          TEXT("list_assets"),
-          TEXT("inspect_object"),
-          TEXT("inspect_blueprint")
-        };
+           TEXT("get_component_tree"),
+           TEXT("list_assets"),
+           TEXT("inspect_object"),
+           TEXT("inspect_blueprint"),
+           TEXT("get_blueprint_graph"),
+           TEXT("get_blueprint_dependencies"),
+           TEXT("get_blueprint_dependents")
+         };
 
         TArray<TSharedPtr<FJsonValue>> Supported;
         for (const TCHAR* M : Methods)
@@ -1047,6 +1170,8 @@ namespace
           Params->TryGetBoolField(TEXT("use_active_if_missing"), bUseActiveIfMissing);
         }
 
+        // Re-parse the three params we support here rather than relying on the helper (keeps this block self-contained).
+        // (The helper is used by get_blueprint_* methods below.)
         UBlueprint* BP = nullptr;
         if (!ObjectPath.IsEmpty())
         {
@@ -1087,15 +1212,27 @@ namespace
         Result->SetStringField(TEXT("parent_class"), BP && BP->ParentClass ? BP->ParentClass->GetPathName() : TEXT(""));
         Result->SetStringField(TEXT("generated_class"), BP && BP->GeneratedClass ? BP->GeneratedClass->GetPathName() : TEXT(""));
         Result->SetStringField(TEXT("blueprint_type"), BP ? StaticEnum<EBlueprintType>()->GetNameStringByValue(static_cast<int64>(BP->BlueprintType)) : TEXT(""));
+        Result->SetStringField(TEXT("status"), BP ? StaticEnum<EBlueprintStatus>()->GetNameStringByValue(static_cast<int64>(BP->Status)) : TEXT(""));
 
         TArray<TSharedPtr<FJsonValue>> Vars;
         TArray<TSharedPtr<FJsonValue>> FunctionGraphs;
         TArray<TSharedPtr<FJsonValue>> MacroGraphs;
         TArray<TSharedPtr<FJsonValue>> UbergraphPages;
         TArray<TSharedPtr<FJsonValue>> Components;
+        TArray<TSharedPtr<FJsonValue>> Interfaces;
+        TArray<TSharedPtr<FJsonValue>> Timelines;
+        TArray<TSharedPtr<FJsonValue>> Dispatchers;
 
         if (BP)
         {
+          for (const FBPInterfaceDescription& I : BP->ImplementedInterfaces)
+          {
+            if (I.Interface)
+            {
+              Interfaces.Add(MakeShared<FJsonValueString>(I.Interface->GetPathName()));
+            }
+          }
+
           for (const FBPVariableDescription& V : BP->NewVariables)
           {
             TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
@@ -1104,6 +1241,16 @@ namespace
             Obj->SetStringField(TEXT("category"), V.Category.ToString());
             Obj->SetBoolField(TEXT("instance_editable"), V.PropertyFlags & CPF_Edit);
             Vars.Add(MakeShared<FJsonValueObject>(Obj));
+
+            // Heuristic: event dispatchers are typically multicast delegates.
+            const FString Cat = V.VarType.PinCategory.ToString();
+            if (Cat.Equals(TEXT("multicastdelegate"), ESearchCase::IgnoreCase) || Cat.Equals(TEXT("delegate"), ESearchCase::IgnoreCase))
+            {
+              TSharedPtr<FJsonObject> D = MakeShared<FJsonObject>();
+              D->SetStringField(TEXT("name"), V.VarName.ToString());
+              D->SetStringField(TEXT("type"), PinTypeToString(V.VarType));
+              Dispatchers.Add(MakeShared<FJsonValueObject>(D));
+            }
           }
 
           for (UEdGraph* G : BP->FunctionGraphs)
@@ -1149,6 +1296,20 @@ namespace
               Components.Add(MakeShared<FJsonValueObject>(C));
             }
           }
+
+          for (UTimelineTemplate* T : BP->Timelines)
+          {
+            if (!T)
+            {
+              continue;
+            }
+            TSharedPtr<FJsonObject> TL = MakeShared<FJsonObject>();
+            TL->SetStringField(TEXT("name"), T->GetFName().ToString());
+            TL->SetNumberField(TEXT("length"), T->TimelineLength);
+            TL->SetBoolField(TEXT("looping"), T->bLoop);
+            TL->SetBoolField(TEXT("ignore_time_dilation"), T->bIgnoreTimeDilation);
+            Timelines.Add(MakeShared<FJsonValueObject>(TL));
+          }
         }
 
         Result->SetArrayField(TEXT("variables"), Vars);
@@ -1156,6 +1317,9 @@ namespace
         Result->SetArrayField(TEXT("macro_graphs"), MacroGraphs);
         Result->SetArrayField(TEXT("ubergraph_pages"), UbergraphPages);
         Result->SetArrayField(TEXT("components"), Components);
+        Result->SetArrayField(TEXT("interfaces"), Interfaces);
+        Result->SetArrayField(TEXT("timelines"), Timelines);
+        Result->SetArrayField(TEXT("event_dispatchers"), Dispatchers);
 
         if (BP && bIncludeCdoProperties && BP->GeneratedClass)
         {
@@ -1163,6 +1327,267 @@ namespace
           MaxProperties = FMath::Clamp(MaxProperties, 0, 2000);
           Result->SetArrayField(TEXT("cdo_properties"), ExportObjectProperties(CDO, bIncludeTransient, MaxProperties, NameContains));
           Result->SetStringField(TEXT("cdo_object_path"), CDO ? CDO->GetPathName() : TEXT(""));
+        }
+      }
+
+      else if (Method == TEXT("get_blueprint_graph") || Method == TEXT("get_blueprint_dependencies") || Method == TEXT("get_blueprint_dependents"))
+      {
+        UBlueprint* BP = ResolveBlueprintBestEffort(Params);
+        FString GraphName;
+        FString Mode = TEXT("summary");
+        FString NodeId;
+        int32 MaxNodes = 200;
+        int32 MaxEdges = 2000;
+        bool bIncludePins = false;
+        bool bIncludeEdges = false;
+
+        if (Params.IsValid())
+        {
+          Params->TryGetStringField(TEXT("graph"), GraphName);
+          Params->TryGetStringField(TEXT("mode"), Mode);
+          Params->TryGetStringField(TEXT("node_id"), NodeId);
+
+          double Num = 0;
+          if (Params->TryGetNumberField(TEXT("max_nodes"), Num)) MaxNodes = static_cast<int32>(Num);
+          if (Params->TryGetNumberField(TEXT("max_edges"), Num)) MaxEdges = static_cast<int32>(Num);
+          Params->TryGetBoolField(TEXT("include_pins"), bIncludePins);
+          Params->TryGetBoolField(TEXT("include_edges"), bIncludeEdges);
+        }
+
+        MaxNodes = FMath::Clamp(MaxNodes, 0, 2000);
+        MaxEdges = FMath::Clamp(MaxEdges, 0, 20000);
+
+        if (Method == TEXT("get_blueprint_dependencies") || Method == TEXT("get_blueprint_dependents"))
+        {
+          FString Package;
+          if (BP && BP->GetOutermost())
+          {
+            Package = BP->GetOutermost()->GetName();
+          }
+          else if (Params.IsValid())
+          {
+            Params->TryGetStringField(TEXT("asset_path"), Package);
+          }
+
+          Result->SetStringField(TEXT("package"), Package);
+
+          TArray<TSharedPtr<FJsonValue>> Items;
+          if (!Package.IsEmpty())
+          {
+            FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+            IAssetRegistry& Registry = AssetRegistryModule.Get();
+
+            TArray<FName> Out;
+            if (Method == TEXT("get_blueprint_dependencies"))
+            {
+              Registry.GetDependencies(FName(*Package), Out, EAssetRegistryDependencyType::All);
+              for (const FName& N : Out)
+              {
+                Items.Add(MakeShared<FJsonValueString>(N.ToString()));
+              }
+              Result->SetArrayField(TEXT("dependencies"), Items);
+              Result->SetNumberField(TEXT("returned"), Items.Num());
+            }
+            else
+            {
+              Registry.GetReferencers(FName(*Package), Out, EAssetRegistryDependencyType::All);
+              for (const FName& N : Out)
+              {
+                Items.Add(MakeShared<FJsonValueString>(N.ToString()));
+              }
+              Result->SetArrayField(TEXT("dependents"), Items);
+              Result->SetNumberField(TEXT("returned"), Items.Num());
+            }
+          }
+        }
+        else
+        {
+          // Graph export
+          Result->SetStringField(TEXT("blueprint_object_path"), BP ? BP->GetPathName() : TEXT(""));
+          Result->SetStringField(TEXT("blueprint_asset_path"), BP && BP->GetOutermost() ? BP->GetOutermost()->GetName() : TEXT(""));
+
+          FString GraphType;
+          UEdGraph* Graph = ResolveGraphBestEffort(BP, GraphName, GraphType);
+          Result->SetStringField(TEXT("graph_name"), Graph ? Graph->GetName() : TEXT(""));
+          Result->SetStringField(TEXT("graph_type"), GraphType);
+          Result->SetStringField(TEXT("mode"), Mode);
+
+          // Summary always includes comment boxes (cheap) and can be used by get_blueprint_graph_comments.
+          TArray<TSharedPtr<FJsonValue>> CommentBoxes;
+          if (Graph)
+          {
+            for (UEdGraphNode* N : Graph->Nodes)
+            {
+              if (UEdGraphNode_Comment* C = Cast<UEdGraphNode_Comment>(N))
+              {
+                TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+                Obj->SetStringField(TEXT("id"), C->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens));
+                Obj->SetStringField(TEXT("title"), C->GetNodeTitle(ENodeTitleType::ListView).ToString());
+                Obj->SetStringField(TEXT("comment"), C->NodeComment);
+                Obj->SetNumberField(TEXT("pos_x"), C->NodePosX);
+                Obj->SetNumberField(TEXT("pos_y"), C->NodePosY);
+                Obj->SetNumberField(TEXT("width"), C->NodeWidth);
+                Obj->SetNumberField(TEXT("height"), C->NodeHeight);
+                CommentBoxes.Add(MakeShared<FJsonValueObject>(Obj));
+              }
+            }
+          }
+          Result->SetArrayField(TEXT("comment_boxes"), CommentBoxes);
+
+          if (!Graph)
+          {
+            Result->SetNumberField(TEXT("node_count"), 0);
+            Result->SetNumberField(TEXT("edge_count"), 0);
+            Result->SetArrayField(TEXT("nodes"), TArray<TSharedPtr<FJsonValue>>{});
+            Result->SetArrayField(TEXT("edges"), TArray<TSharedPtr<FJsonValue>>{});
+          }
+          else
+          {
+            const bool bExecOnly = Mode.Equals(TEXT("execution_only"), ESearchCase::IgnoreCase);
+            const bool bDataOnly = Mode.Equals(TEXT("data_flow"), ESearchCase::IgnoreCase);
+            const bool bSummary = Mode.Equals(TEXT("summary"), ESearchCase::IgnoreCase);
+
+            // If targeting a specific node_id, return only that node (and optionally its pins).
+            FGuid TargetGuid;
+            const bool bHasTarget = !NodeId.IsEmpty() && FGuid::Parse(NodeId, TargetGuid);
+
+            TArray<TSharedPtr<FJsonValue>> Nodes;
+            TArray<TSharedPtr<FJsonValue>> Edges;
+
+            int32 AddedNodes = 0;
+            int32 AddedEdges = 0;
+
+            for (UEdGraphNode* N : Graph->Nodes)
+            {
+              if (!N)
+              {
+                continue;
+              }
+              if (bHasTarget && N->NodeGuid != TargetGuid)
+              {
+                continue;
+              }
+
+              if (AddedNodes >= MaxNodes)
+              {
+                break;
+              }
+
+              TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+              Obj->SetStringField(TEXT("id"), N->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens));
+              Obj->SetStringField(TEXT("title"), N->GetNodeTitle(ENodeTitleType::ListView).ToString());
+              Obj->SetStringField(TEXT("class"), N->GetClass() ? N->GetClass()->GetName() : TEXT(""));
+              Obj->SetNumberField(TEXT("pos_x"), N->NodePosX);
+              Obj->SetNumberField(TEXT("pos_y"), N->NodePosY);
+              Obj->SetStringField(TEXT("node_comment"), N->NodeComment);
+
+              if (!bSummary && bIncludePins)
+              {
+                TArray<TSharedPtr<FJsonValue>> Pins;
+                for (UEdGraphPin* P : N->Pins)
+                {
+                  if (!P)
+                  {
+                    continue;
+                  }
+
+                  const bool bIsExec = IsExecPin(P);
+                  if (bExecOnly && !bIsExec) continue;
+                  if (bDataOnly && bIsExec) continue;
+
+                  TSharedPtr<FJsonObject> PP = MakeShared<FJsonObject>();
+                  PP->SetStringField(TEXT("name"), P->PinName.ToString());
+                  PP->SetStringField(TEXT("direction"), P->Direction == EGPD_Input ? TEXT("input") : TEXT("output"));
+                  PP->SetStringField(TEXT("type"), PinTypeToString(P->PinType));
+                  PP->SetBoolField(TEXT("is_exec"), bIsExec);
+                  PP->SetStringField(TEXT("default_value"), P->DefaultValue);
+                  Pins.Add(MakeShared<FJsonValueObject>(PP));
+                }
+                Obj->SetArrayField(TEXT("pins"), Pins);
+              }
+
+              Nodes.Add(MakeShared<FJsonValueObject>(Obj));
+              AddedNodes++;
+
+              if (bHasTarget)
+              {
+                // No need to scan further nodes once the target is found.
+                break;
+              }
+            }
+
+            // Only build edges when requested.
+            if (!bSummary && (bIncludeEdges || bExecOnly || bDataOnly))
+            {
+              // Build an allowlist of node guids we emitted, so edges are bounded to the returned nodes.
+              TSet<FGuid> Allowed;
+              for (const TSharedPtr<FJsonValue>& V : Nodes)
+              {
+                if (!V.IsValid()) continue;
+                const TSharedPtr<FJsonObject>* O = nullptr;
+                if (V->TryGetObject(O) && O && O->IsValid())
+                {
+                  FString Id;
+                  if ((*O)->TryGetStringField(TEXT("id"), Id))
+                  {
+                    FGuid G;
+                    if (FGuid::Parse(Id, G)) Allowed.Add(G);
+                  }
+                }
+              }
+
+              TSet<FString> Seen;
+              for (UEdGraphNode* N : Graph->Nodes)
+              {
+                if (!N) continue;
+                if (Allowed.Num() > 0 && !Allowed.Contains(N->NodeGuid)) continue;
+
+                for (UEdGraphPin* P : N->Pins)
+                {
+                  if (!P) continue;
+
+                  const bool bIsExec = IsExecPin(P);
+                  if (bExecOnly && !bIsExec) continue;
+                  if (bDataOnly && bIsExec) continue;
+
+                  // Only emit edges from output pins to reduce duplicates.
+                  if (P->Direction != EGPD_Output) continue;
+
+                  for (UEdGraphPin* L : P->LinkedTo)
+                  {
+                    if (!L || !L->GetOwningNode()) continue;
+                    UEdGraphNode* ToNode = L->GetOwningNode();
+                    if (Allowed.Num() > 0 && !Allowed.Contains(ToNode->NodeGuid)) continue;
+
+                    const FString Key =
+                      N->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens) + TEXT(":") + P->PinName.ToString() +
+                      TEXT("->") + ToNode->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens) + TEXT(":") + L->PinName.ToString();
+                    if (Seen.Contains(Key)) continue;
+                    Seen.Add(Key);
+
+                    if (AddedEdges >= MaxEdges) break;
+
+                    TSharedPtr<FJsonObject> E = MakeShared<FJsonObject>();
+                    E->SetStringField(TEXT("from_node_id"), N->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens));
+                    E->SetStringField(TEXT("from_pin"), P->PinName.ToString());
+                    E->SetStringField(TEXT("to_node_id"), ToNode->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens));
+                    E->SetStringField(TEXT("to_pin"), L->PinName.ToString());
+                    Edges.Add(MakeShared<FJsonValueObject>(E));
+                    AddedEdges++;
+                  }
+
+                  if (AddedEdges >= MaxEdges) break;
+                }
+
+                if (AddedEdges >= MaxEdges) break;
+              }
+            }
+
+            Result->SetNumberField(TEXT("node_count"), Graph->Nodes.Num());
+            Result->SetNumberField(TEXT("edge_count"), Edges.Num());
+            Result->SetArrayField(TEXT("nodes"), Nodes);
+            Result->SetArrayField(TEXT("edges"), Edges);
+          }
         }
       }
 
@@ -1440,7 +1865,10 @@ private:
         return;
       }
 
-      if (Method == TEXT("list_assets") || Method == TEXT("inspect_object") || Method == TEXT("inspect_blueprint"))
+      if (
+        Method == TEXT("list_assets") || Method == TEXT("inspect_object") || Method == TEXT("inspect_blueprint") ||
+        Method == TEXT("get_blueprint_graph") || Method == TEXT("get_blueprint_dependencies") || Method == TEXT("get_blueprint_dependents")
+      )
       {
         bool bCompleted = false;
         TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, Params, bCompleted);

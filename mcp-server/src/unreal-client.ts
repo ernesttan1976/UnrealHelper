@@ -238,6 +238,38 @@ export class UnrealClient {
     return this.request("inspect_blueprint", params);
   }
 
+  async getBlueprintGraph(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+    graph?: string;
+    mode?: string;
+    node_id?: string;
+    max_depth?: number;
+    max_nodes?: number;
+    max_edges?: number;
+    include_pins?: boolean;
+    include_edges?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_blueprint_graph", params);
+  }
+
+  async getBlueprintDependencies(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_blueprint_dependencies", params);
+  }
+
+  async getBlueprintDependents(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_blueprint_dependents", params);
+  }
+
   cancelCurrentOperation(params?: { request_id?: string }): {
     cancelled: string[];
   } {
@@ -330,7 +362,11 @@ export class UnrealClient {
             "get_editor_mode",
             "get_dirty_assets",
             "get_pending_editor_notifications",
-            "get_message_log_summary"
+            "get_message_log_summary",
+            "inspect_blueprint",
+            "get_blueprint_graph",
+            "get_blueprint_dependencies",
+            "get_blueprint_dependents"
           ]
         }
       };
@@ -539,8 +575,85 @@ export class UnrealClient {
       return {
         protocol_version: 1,
         request_id,
-        ok: false,
-        error: { code: "BLUEPRINT_NOT_FOUND", message: "No Blueprint asset editor is open (mock)" }
+        ok: true,
+        result: {
+          name: "BP_Mock",
+          class: "Blueprint",
+          object_path: "/Game/Mock/BP_Mock.BP_Mock",
+          asset_path: "/Game/Mock/BP_Mock",
+          parent_class: "/Script/Engine.Actor",
+          generated_class: "/Game/Mock/BP_Mock.BP_Mock_C",
+          blueprint_type: "BPTYPE_Normal",
+          status: "BS_UpToDate",
+          interfaces: [],
+          variables: [
+            { name: "DoorOffset", type: "float", category: "Default", instance_editable: true }
+          ],
+          function_graphs: ["OpenDoor"],
+          macro_graphs: [],
+          ubergraph_pages: ["EventGraph"],
+          components: [
+            { name: "DefaultSceneRoot", component_class: "SceneComponent", parent: "", attach_socket: "" }
+          ],
+          timelines: [],
+          event_dispatchers: []
+        }
+      };
+    }
+
+    if (method === "get_blueprint_graph") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: {
+          blueprint_object_path: "/Game/Mock/BP_Mock.BP_Mock",
+          blueprint_asset_path: "/Game/Mock/BP_Mock",
+          graph_name: "EventGraph",
+          graph_type: "ubergraph",
+          mode: "summary",
+          node_count: 2,
+          edge_count: 1,
+          nodes: [
+            { id: "00000000-0000-0000-0000-000000000001", title: "Event BeginPlay", class: "UK2Node_Event", pos_x: 0, pos_y: 0 },
+            { id: "00000000-0000-0000-0000-000000000002", title: "Print String", class: "UK2Node_CallFunction", pos_x: 250, pos_y: 0 }
+          ],
+          edges: [
+            {
+              from_node_id: "00000000-0000-0000-0000-000000000001",
+              from_pin: "then",
+              to_node_id: "00000000-0000-0000-0000-000000000002",
+              to_pin: "execute"
+            }
+          ],
+          note: "Mock graph export"
+        }
+      };
+    }
+
+    if (method === "get_blueprint_dependencies") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: {
+          package: "/Game/Mock/BP_Mock",
+          dependencies: [],
+          returned: 0
+        }
+      };
+    }
+
+    if (method === "get_blueprint_dependents") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: {
+          package: "/Game/Mock/BP_Mock",
+          dependents: [],
+          returned: 0
+        }
       };
     }
     return {
