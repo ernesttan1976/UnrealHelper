@@ -9,13 +9,15 @@ Run in Unreal Editor:
 
 Goals from the scene plan:
 - One-storey house with living room sitting over a basement fire pocket.
+- Sound-first: basement roar is muffled pre-collapse ("acoustic baffle"), then opens up on collapse.
 - "Mismatch" cues: visible kitchen fire, but the living room is hotter; water has little effect.
 - Instability cues: mild rumble/prop jitter, then a distinct floor give, then collapse payoff.
 
 Notes:
-- This script builds reliable, pivot-safe blockout geometry using Engine Cube meshes.
-- It also spawns tagged markers/placeholder actors for later Sequencer, audio occlusion,
-  shake/jitter, and the custom floor-failure system.
+ - This script builds reliable, pivot-safe blockout geometry using Engine Cube meshes.
+ - It spawns tagged markers/placeholder actors for later Sequencer, audio occlusion,
+   shake/jitter, and the custom floor-failure system.
+ - Undo: run `ue_scripts/scenario01_fire_build_env_undo.py` (deletes all actors with prefix `S01_`).
 """
 
 import math
@@ -380,6 +382,15 @@ def _spawn_ambient_sound(label: str, loc, cue_path: str, volume: float, pitch: f
     return a
 
 
+def _try_set_audio_auto_activate(ambient_actor, enabled: bool) -> None:
+    # AmbientSound owns an AudioComponent; keep best-effort across versions.
+    try:
+        ac = ambient_actor.get_editor_property("audio_component")
+        ac.set_editor_property("auto_activate", bool(enabled))
+    except Exception:
+        pass
+
+
 def _spawn_living_room_tiles(pts_xy, z_top: float, thickness: float):
     xs = [p[0] for p in pts_xy]
     ys = [p[1] for p in pts_xy]
@@ -599,8 +610,8 @@ def build_blockout():
         pass
 
     # Audio placeholders for the "too quiet" interior and the collapse payoff.
-    # These are meant to be driven by Sequencer/Blueprint later (mute/unmute, swap cues, etc.).
-    _spawn_ambient_sound(
+    # Keep post-collapse sources NOT auto-activated to avoid both playing at once.
+    amb_muffled = _spawn_ambient_sound(
         f"{PREFIX}Amb_Basement_Muffled",
         (living_x, living_y, BASEMENT_FLOOR_Z + 80.0),
         FIRE_CUE,
@@ -610,7 +621,9 @@ def build_blockout():
         tags=["S01", "Env", "Audio", "Basement", "Muffled", "PreCollapse"],
         folder=f"{FOLDER_ROOT}/Basement/Audio",
     )
-    _spawn_ambient_sound(
+    _try_set_audio_auto_activate(amb_muffled, True)
+
+    amb_roar = _spawn_ambient_sound(
         f"{PREFIX}Amb_Basement_Roar",
         (living_x, living_y, BASEMENT_FLOOR_Z + 80.0),
         FIRE_CUE,
@@ -619,9 +632,10 @@ def build_blockout():
         tags=["S01", "Env", "Audio", "Basement", "Roar", "PostCollapse"],
         folder=f"{FOLDER_ROOT}/Basement/Audio",
     )
+    _try_set_audio_auto_activate(amb_roar, False)
 
     # Low-frequency instability bed (very subtle; give sound designers an anchor point).
-    _spawn_ambient_sound(
+    amb_rumble = _spawn_ambient_sound(
         f"{PREFIX}Amb_Rumble_Subtle",
         (living_x, living_y, GROUND_FLOOR_Z + 40.0),
         FIRE_CUE,
@@ -630,6 +644,25 @@ def build_blockout():
         cutoff_hz=350.0,
         tags=["S01", "Env", "Audio", "Rumble", "Instability"],
         folder=f"{FOLDER_ROOT}/LivingRoom/Audio",
+    )
+    _try_set_audio_auto_activate(amb_rumble, True)
+
+    # Acoustic baffle / occlusion tuning anchor (designer-facing marker).
+    _spawn_marker(
+        f"{PREFIX}Marker_AcousticBaffle_Floor",
+        (living_x, living_y, GROUND_FLOOR_Z + 5.0),
+        folder=f"{FOLDER_ROOT}/LivingRoom/Markers",
+        tags=["S01", "Marker", "Audio", "AcousticBaffle", "PreCollapse"],
+    )
+
+    # Basement fire pocket volume marker (for VFX, heat, and audio routing).
+    _spawn_static_mesh_actor(
+        f"{PREFIX}BasementFirePocket_Volume",
+        CUBE,
+        (living_x, living_y, BASEMENT_FLOOR_Z + 90.0),
+        scale=(3.0, 3.0, 1.5),
+        tags=["S01", "Marker", "Basement", "FirePocket", "Volume"],
+        folder=f"{FOLDER_ROOT}/Basement/Markers",
     )
 
     # --- Story beat marker ---
@@ -645,6 +678,13 @@ def build_blockout():
         (living_x, living_y, GROUND_FLOOR_Z + 5.0),
         folder=f"{FOLDER_ROOT}/LivingRoom/Markers",
         tags=["S01", "Marker", "Collapse", "Payoff"],
+    )
+
+    _spawn_marker(
+        f"{PREFIX}Marker_DustBlast_Outward",
+        (center_x - 740.0, center_y, GROUND_FLOOR_Z + 10.0),
+        folder=f"{FOLDER_ROOT}/Beats",
+        tags=["S01", "Marker", "Dust", "Collapse", "Threshold"],
     )
 
     # Beat-by-beat navigation markers (for blocking and camera/VO timing).

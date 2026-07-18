@@ -52,6 +52,8 @@ Rules:
 Prefer the simple single tag string form because `Actor.tags` is an array of `Name`.
 1. The undo script must contain the exact same `RUN_ID` constant and delete actors by that tag first.
 1. The undo script may also support deleting by `PREFIX`/`FOLDER_ROOT` as a fallback, but the primary mode must be run-id targeted so it only removes what was added by that generated build script.
+1. The undo script must also remove any World Outliner folders the build script created (typically everything under `FOLDER_ROOT`). Do this after deleting actors.
+   If a direct folder-delete API is unavailable in the current UE Python surface, log a clear message that folders could not be removed automatically.
 1. Both scripts should log what they did and how many actors were affected.
 
 ## PCG-First Requirement (New)
@@ -244,6 +246,7 @@ Also generate a separate undo script with:
 
 1. The same `RUN_ID`, `RUN_TAG`, `PREFIX`, `FOLDER_ROOT` constants.
 1. `_delete_existing_with_run_tag()` that finds actors with `RUN_TAG` and deletes them via `EditorActorSubsystem`.
+1. `_delete_created_folders()` that best-effort removes empty World Outliner folders under `FOLDER_ROOT` after actor deletion.
 1. An `undo()` entry point that logs a count and can be run standalone.
 
 ### PCG Script Additions (When PCG Is Available)

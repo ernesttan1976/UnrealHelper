@@ -10,3 +10,5 @@
 .env
 
 mcp-server/.env
+**/__pycache__/
+*.pyc
