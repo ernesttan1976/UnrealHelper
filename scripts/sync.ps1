@@ -40,7 +40,12 @@ param(
 
   [Parameter(Mandatory = $false)]
   [ValidateSet("Win64")]
-  [string]$Platform = "Win64"
+  [string]$Platform = "Win64",
+
+  # UBA can sometimes appear to hang (and can hide the real compiler error output).
+  # Default to disabling it for reliable local builds; opt back in with -UseUBA.
+  [Parameter(Mandatory = $false)]
+  [switch]$UseUBA
 )
 
 $ErrorActionPreference = "Stop"
@@ -135,7 +140,19 @@ Write-Host "Target:  ${projectName}Editor $Platform $Configuration"
 $buildBat = Join-Path $engineRootResolved "Engine/Build/BatchFiles/Build.bat"
 
 Write-Host "Building... (make sure Unreal Editor is closed)"
-& $buildBat "${projectName}Editor" $Platform $Configuration "-Project=$uprojectPath" -WaitMutex -NoHotReloadFromIDE
+$buildArgs = @(
+  "${projectName}Editor",
+  $Platform,
+  $Configuration,
+  "-Project=$uprojectPath",
+  "-WaitMutex",
+  "-NoHotReloadFromIDE"
+)
+if (-not $UseUBA) {
+  $buildArgs += "-NoUBA"
+}
+
+& $buildBat @buildArgs
 if ($LASTEXITCODE -ne 0) {
   throw "Build failed with exit code $LASTEXITCODE"
 }

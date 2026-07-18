@@ -1380,7 +1380,15 @@ namespace
             TArray<FName> Out;
             if (Method == TEXT("get_blueprint_dependencies"))
             {
+#if (ENGINE_MAJOR_VERSION > 5) || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5)
+              Registry.GetDependencies(
+                FName(*Package),
+                Out,
+                UE::AssetRegistry::EDependencyCategory::All,
+                UE::AssetRegistry::FDependencyQuery());
+#else
               Registry.GetDependencies(FName(*Package), Out, EAssetRegistryDependencyType::All);
+#endif
               for (const FName& N : Out)
               {
                 Items.Add(MakeShared<FJsonValueString>(N.ToString()));
@@ -1390,7 +1398,15 @@ namespace
             }
             else
             {
+#if (ENGINE_MAJOR_VERSION > 5) || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5)
+              Registry.GetReferencers(
+                FName(*Package),
+                Out,
+                UE::AssetRegistry::EDependencyCategory::All,
+                UE::AssetRegistry::FDependencyQuery());
+#else
               Registry.GetReferencers(FName(*Package), Out, EAssetRegistryDependencyType::All);
+#endif
               for (const FName& N : Out)
               {
                 Items.Add(MakeShared<FJsonValueString>(N.ToString()));
