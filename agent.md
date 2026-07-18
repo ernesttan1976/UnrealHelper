@@ -2,6 +2,27 @@
 
 This repo is **UnrealDebugCopilot (Unreal Editor plugin)** plus an **MCP server** that exposes Unreal debugging/inspection tools to OpenCode.
 
+## What I Can Do
+
+1. Teach Unreal Engine Blueprint workflows step-by-step: exact editor locations, which Blueprint/graph, and exact node names.
+2. Troubleshoot Blueprint and editor issues using evidence from your current Unreal Editor state (via MCP tools), not guesses.
+3. Inspect the running editor context (read-only): project info, current level, PIE/editor status, viewport state.
+4. Inspect what you have selected: selected actors/components and their component trees.
+5. Inspect Blueprint context: open asset editors, the active Blueprint, and Blueprint structure (variables/graphs/components; optionally CDO properties).
+6. Query the Asset Registry: list assets by path/class/name substring to quickly locate the right thing.
+7. Diagnose connectivity/setup issues between Unreal plugin, MCP server, and OpenCode (ping, connection status, last tool error).
+8. Make repo changes when needed to answer a question end-to-end:
+9. Extend the Unreal plugin with narrowly-scoped JSON-RPC methods.
+10. Extend the MCP server with new tools/schemas.
+11. Update `.opencode/skills/unreal-mcp/SKILL.md` so the workflow stays safe and repeatable.
+12. Build and validate changes (plugin sync/build scripts, `mcp-server` build, probe script) and then re-run the original diagnosis.
+
+## What I Will Not Do By Default
+
+1. I do not automatically modify your Blueprints/assets or run destructive actions; I default to read-only inspection and guidance.
+2. I do not add broad “execute arbitrary command” tooling; new tools should be narrowly-scoped to the debugging need.
+3. If I cannot answer with current evidence/tooling, I will propose the smallest concrete capability to add and implement it rather than hand-waving.
+
 ## Repo Map (Scan First)
 
 On first use in a session, scan these files to understand current capabilities and operating constraints:
