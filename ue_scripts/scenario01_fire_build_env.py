@@ -56,6 +56,7 @@ WALL_THICKNESS = 20.0
 
 # Openings (simple: one front door opening and one interior opening)
 FRONT_DOOR_WIDTH = 120.0
+BACK_DOOR_WIDTH = 120.0
 INTERIOR_OPENING_WIDTH = 140.0
 
 # Living room zone: front half (min X to mid X). This drives collapse-floor tiling.
@@ -71,6 +72,7 @@ EXTERIOR_APPROACH_OFFSET = (-1050.0, 0.0)
 FRONT_DOOR_OFFSET = (-800.0, 0.0)
 THRESHOLD_OFFSET = (-740.0, 0.0)
 EXTERIOR_AFTERMATH_OFFSET = (-1200.0, 150.0)
+BACK_DOOR_OFFSET = (800.0, 0.0)
 
 # Visual options
 SPAWN_ROOF_SLAB = True
@@ -81,6 +83,12 @@ ROOF_OVERHANG = 20.0
 CUBE = "/Engine/BasicShapes/Cube.Cube"
 FIRE_BP = "/Game/StarterContent/Blueprints/Blueprint_Effect_Fire"
 FIRE_CUE = "/Game/StarterContent/Audio/Fire01_Cue.Fire01_Cue"
+SMOKE_PS = "/Game/StarterContent/Particles/P_Smoke.P_Smoke"
+
+# Optional StarterContent materials (best-effort; if missing we keep default).
+M_WALL = "/Game/StarterContent/Materials/M_Brick_Clay_New.M_Brick_Clay_New"
+M_FLOOR = "/Game/StarterContent/Materials/M_Wood_Oak.M_Wood_Oak"
+M_ROOF = "/Game/StarterContent/Materials/M_Roof_Shingle.M_Roof_Shingle"
 
 
 def _log(msg: str) -> None:
@@ -179,6 +187,20 @@ def _spawn_static_mesh_actor(label: str, mesh_path: str, loc, rot=(0.0, 0.0, 0.0
     if tags:
         actor.set_editor_property("tags", [unreal.Name(t) for t in tags])
     return actor
+
+
+def _try_set_material(actor, material_path: str, slot_index: int = 0) -> None:
+    if not actor or not material_path:
+        return
+    mat = _try_load(material_path)
+    if not mat:
+        return
+    try:
+        smc = actor.get_component_by_class(unreal.StaticMeshComponent)
+        if smc:
+            smc.set_material(slot_index, mat)
+    except Exception:
+        pass
 
 
 def _spawn_class(label: str, cls, loc, rot=(0.0, 0.0, 0.0), tags=None, folder=FOLDER_ROOT):
@@ -297,7 +319,17 @@ def _split_edge_for_opening(p0, p1, opening_center_t: float, opening_width: floa
     return segs
 
 
-def _spawn_perimeter_walls(storey_name: str, pts_xy, z0: float, height: float, thickness: float, tags, folder, front_opening_width: float = 0.0):
+def _spawn_perimeter_walls(
+    storey_name: str,
+    pts_xy,
+    z0: float,
+    height: float,
+    thickness: float,
+    tags,
+    folder,
+    front_opening_width: float = 0.0,
+    back_opening_width: float = 0.0,
+):
     area = _poly_signed_area_xy(pts_xy)
     winding = "CCW" if area > 0.0 else "CW"
     outward_sign = 1.0 if winding == "CCW" else -1.0
@@ -305,17 +337,26 @@ def _spawn_perimeter_walls(storey_name: str, pts_xy, z0: float, height: float, t
     # Identify "front" edge as the one with smallest X at its midpoint.
     front_edge_idx = -1
     best_x = None
+
+    # Identify "back" edge as the one with largest X at its midpoint.
+    back_edge_idx = -1
+    best_back_x = None
     edges_list = list(_edges(pts_xy))
     for idx, (p0, p1) in enumerate(edges_list):
         mx = (p0[0] + p1[0]) * 0.5
         if best_x is None or mx < best_x:
             best_x = mx
             front_edge_idx = idx
+        if best_back_x is None or mx > best_back_x:
+            best_back_x = mx
+            back_edge_idx = idx
 
     for idx, (p0, p1) in enumerate(edges_list):
         segs = [(p0, p1)]
         if idx == front_edge_idx and front_opening_width > 0.0:
             segs = _split_edge_for_opening(p0, p1, opening_center_t=0.5, opening_width=front_opening_width)
+        if idx == back_edge_idx and back_opening_width > 0.0:
+            segs = _split_edge_for_opening(p0, p1, opening_center_t=0.5, opening_width=back_opening_width)
 
         for si, (a, b) in enumerate(segs):
             _spawn_wall_segment(
@@ -472,7 +513,7 @@ def build_blockout():
 
     # --- Slabs ---
     # Basement floor slab: top at BASEMENT_FLOOR_Z
-    _spawn_slab(
+    basement_slab = _spawn_slab(
         f"{PREFIX}Basement_Slab",
         FOOTPRINT_XY,
         top_z=BASEMENT_FLOOR_Z,
@@ -480,9 +521,10 @@ def build_blockout():
         tags=["S01", "Env", "Basement", "Slab"],
         folder=f"{FOLDER_ROOT}/Basement",
     )
+    _try_set_material(basement_slab, M_FLOOR)
 
     # Ground floor slab: top at GROUND_FLOOR_Z
-    _spawn_slab(
+    ground_slab = _spawn_slab(
         f"{PREFIX}Ground_Slab",
         FOOTPRINT_XY,
         top_z=GROUND_FLOOR_Z,
@@ -490,9 +532,10 @@ def build_blockout():
         tags=["S01", "Env", "Ground", "Slab"],
         folder=f"{FOLDER_ROOT}/Ground",
     )
+    _try_set_material(ground_slab, M_FLOOR)
 
     if SPAWN_ROOF_SLAB:
-        _spawn_slab(
+        roof_slab = _spawn_slab(
             f"{PREFIX}Roof_Slab",
             FOOTPRINT_XY,
             top_z=GROUND_FLOOR_Z + GROUND_WALL_HEIGHT,
@@ -501,6 +544,7 @@ def build_blockout():
             tags=["S01", "Env", "Roof", "Slab"],
             folder=f"{FOLDER_ROOT}/Roof",
         )
+        _try_set_material(roof_slab, M_ROOF)
 
     # Living room collapse tiles (sit exactly on top of ground slab)
     _spawn_living_room_tiles(FOOTPRINT_XY, z_top=GROUND_FLOOR_Z + 0.1, thickness=3.0)
@@ -515,7 +559,22 @@ def build_blockout():
         tags=["S01", "Env", "Ground", "Wall"],
         folder=f"{FOLDER_ROOT}/Ground/Walls",
         front_opening_width=FRONT_DOOR_WIDTH,
+        back_opening_width=BACK_DOOR_WIDTH,
     )
+
+    # Best-effort wall material assignment (iterate over the spawned wall labels).
+    # We keep this cheap and resilient: set material on any static mesh actor matching the prefix.
+    try:
+        _editor, actors = _editor_subsystems()
+        for a in actors.get_all_level_actors():
+            if a.get_actor_label().startswith(f"{PREFIX}Ground_Wall_"):
+                _try_set_material(a, M_WALL)
+            if a.get_actor_label().startswith(f"{PREFIX}Basement_Wall_"):
+                _try_set_material(a, M_WALL)
+            if a.get_actor_label().startswith(f"{PREFIX}Ground_Interior_"):
+                _try_set_material(a, M_WALL)
+    except Exception:
+        pass
 
     _spawn_interior_divider(
         "Ground",
@@ -536,6 +595,7 @@ def build_blockout():
         tags=["S01", "Env", "Basement", "Wall"],
         folder=f"{FOLDER_ROOT}/Basement/Walls",
         front_opening_width=0.0,
+        back_opening_width=0.0,
     )
 
     # --- Lighting / atmosphere (keep light and neutral) ---
@@ -590,6 +650,34 @@ def build_blockout():
             folder=f"{FOLDER_ROOT}/Ground/Kitchen",
             tags=["S01", "Env", "Ground", "Kitchen", "Fire", "Visible"],
         )
+
+        # Exterior rear smoke hint (concept beat 1). Best-effort using StarterContent particles.
+        # If missing, we still place a marker for a smoke Niagara/VFX replacement later.
+        try:
+            ps = _try_load(SMOKE_PS)
+            if ps:
+                smoke = _spawn_class(
+                    f"{PREFIX}ExteriorSmoke_Back",
+                    unreal.Emitter,
+                    (center_x + 780.0, center_y, GROUND_FLOOR_Z + 220.0),
+                    folder=f"{FOLDER_ROOT}/Exterior/VFX",
+                    tags=["S01", "Env", "Exterior", "Smoke", "Back"],
+                )
+                try:
+                    psc = smoke.get_component_by_class(unreal.ParticleSystemComponent)
+                    if psc:
+                        psc.set_editor_property("template", ps)
+                except Exception:
+                    pass
+            else:
+                _spawn_marker(
+                    f"{PREFIX}Marker_ExteriorSmoke_Back",
+                    (center_x + 780.0, center_y, GROUND_FLOOR_Z + 220.0),
+                    folder=f"{FOLDER_ROOT}/Exterior/VFX",
+                    tags=["S01", "Marker", "Exterior", "Smoke", "Back"],
+                )
+        except Exception:
+            pass
     else:
         _log(f"Fire blueprint missing/unloadable: {FIRE_BP} (skipping fire actors)")
 
@@ -698,6 +786,14 @@ def build_blockout():
         f"{PREFIX}Beat_Entry_FrontDoor",
         (center_x + FRONT_DOOR_OFFSET[0], center_y + FRONT_DOOR_OFFSET[1], GROUND_FLOOR_Z + 5.0),
         tags=["S01", "Beat", "Entry"],
+        folder=f"{FOLDER_ROOT}/Beats",
+    )
+
+    # Scene-plan aligned back door entry toward the kitchen.
+    _spawn_marker(
+        f"{PREFIX}Beat_Entry_BackDoor",
+        (center_x + BACK_DOOR_OFFSET[0], center_y + BACK_DOOR_OFFSET[1], GROUND_FLOOR_Z + 5.0),
+        tags=["S01", "Beat", "Entry", "BackDoor"],
         folder=f"{FOLDER_ROOT}/Beats",
     )
     _spawn_marker(
