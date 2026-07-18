@@ -1,12 +1,21 @@
-"""Scenario01Fire: regenerate a reliable blockout (UE 5.6 Editor Python).
+"""Scenario01Fire: regenerate the environment blockout (UE 5.6 Editor Python).
+
+Source of truth:
+- D:/UnrealHelper/story/Scenario01Fire/scene_plan.md
 
 Run in Unreal Editor:
-1. Open /Game/Scenario01Fire
+1. Open level: /Game/Scenario01Fire
 2. Tools -> Execute Python Script... -> select this file
 
-This version uses Engine basic Cube meshes for pivot-safe slab/wall placement and
-clean storey separation (basement vs ground). The living-room floor is tiled and
-tagged for the future collapse system.
+Goals from the scene plan:
+- One-storey house with living room sitting over a basement fire pocket.
+- "Mismatch" cues: visible kitchen fire, but the living room is hotter; water has little effect.
+- Instability cues: mild rumble/prop jitter, then a distinct floor give, then collapse payoff.
+
+Notes:
+- This script builds reliable, pivot-safe blockout geometry using Engine Cube meshes.
+- It also spawns tagged markers/placeholder actors for later Sequencer, audio occlusion,
+  shake/jitter, and the custom floor-failure system.
 """
 
 import math
@@ -51,6 +60,16 @@ INTERIOR_OPENING_WIDTH = 140.0
 LIVING_ROOM_X_MAX = 0.0
 FLOOR_TILE = 200.0  # tile size for collapse labeling
 
+# Room centers (relative offsets from footprint center). "Front" is -X.
+LIVING_ROOM_CENTER_OFFSET = (-350.0, 0.0)
+KITCHEN_CENTER_OFFSET = (350.0, 0.0)
+
+# Beat marker offsets (cm)
+EXTERIOR_APPROACH_OFFSET = (-1050.0, 0.0)
+FRONT_DOOR_OFFSET = (-800.0, 0.0)
+THRESHOLD_OFFSET = (-740.0, 0.0)
+EXTERIOR_AFTERMATH_OFFSET = (-1200.0, 150.0)
+
 # Visual options
 SPAWN_ROOF_SLAB = True
 ROOF_OVERHANG = 20.0
@@ -92,6 +111,13 @@ def _load(asset_path: str):
     if not asset:
         raise RuntimeError(f"Failed to load asset: {asset_path}")
     return asset
+
+
+def _try_load(asset_path: str):
+    try:
+        return unreal.load_asset(asset_path)
+    except Exception:
+        return None
 
 
 def _deg_atan2(y: float, x: float) -> float:
@@ -170,6 +196,10 @@ def _spawn_class(label: str, cls, loc, rot=(0.0, 0.0, 0.0), tags=None, folder=FO
     if tags:
         actor.set_editor_property("tags", [unreal.Name(t) for t in tags])
     return actor
+
+
+def _spawn_marker(label: str, loc, tags=None, folder=FOLDER_ROOT):
+    return _spawn_class(label, unreal.TargetPoint, loc, tags=tags, folder=folder)
 
 
 def _delete_existing_with_prefix(prefix: str) -> None:
@@ -326,6 +356,30 @@ def _spawn_interior_divider(storey_name: str, pts_xy, z0: float, height: float, 
         )
 
 
+def _try_set_audio_muffle(audio_component, enabled: bool, cutoff_hz: float) -> None:
+    # Property names can differ between engine versions/projects; keep this best-effort.
+    try:
+        audio_component.set_editor_property("low_pass_filter_enabled", enabled)
+        audio_component.set_editor_property("low_pass_filter_frequency", float(cutoff_hz))
+    except Exception:
+        pass
+
+
+def _spawn_ambient_sound(label: str, loc, cue_path: str, volume: float, pitch: float = 1.0, muffled: bool = False, cutoff_hz: float = 1200.0, tags=None, folder=FOLDER_ROOT):
+    cue = _try_load(cue_path)
+    a = _spawn_class(label, unreal.AmbientSound, loc, tags=tags, folder=folder)
+    try:
+        ac = a.get_editor_property("audio_component")
+        if cue:
+            ac.set_editor_property("sound", cue)
+        ac.set_editor_property("volume_multiplier", float(volume))
+        ac.set_editor_property("pitch_multiplier", float(pitch))
+        _try_set_audio_muffle(ac, enabled=muffled, cutoff_hz=cutoff_hz)
+    except Exception:
+        pass
+    return a
+
+
 def _spawn_living_room_tiles(pts_xy, z_top: float, thickness: float):
     xs = [p[0] for p in pts_xy]
     ys = [p[1] for p in pts_xy]
@@ -374,19 +428,34 @@ def build_blockout():
     winding = "CCW" if area > 0.0 else "CW"
     center_x, center_y = _poly_center_xy(FOOTPRINT_XY)
 
+    living_x = center_x + LIVING_ROOM_CENTER_OFFSET[0]
+    living_y = center_y + LIVING_ROOM_CENTER_OFFSET[1]
+    kitchen_x = center_x + KITCHEN_CENTER_OFFSET[0]
+    kitchen_y = center_y + KITCHEN_CENTER_OFFSET[1]
+
     # --- Debug markers ---
-    _spawn_class(
+    _spawn_marker(
         f"{PREFIX}Debug_BasementCenter",
-        unreal.TargetPoint,
         (center_x, center_y, BASEMENT_FLOOR_Z + 50.0),
         tags=["S01", "Debug", "Basement"],
         folder=f"{FOLDER_ROOT}/Debug",
     )
-    _spawn_class(
+    _spawn_marker(
         f"{PREFIX}Debug_GroundCenter",
-        unreal.TargetPoint,
         (center_x, center_y, GROUND_FLOOR_Z + 50.0),
         tags=["S01", "Debug", "Ground"],
+        folder=f"{FOLDER_ROOT}/Debug",
+    )
+    _spawn_marker(
+        f"{PREFIX}Debug_LivingRoomCenter",
+        (living_x, living_y, GROUND_FLOOR_Z + 50.0),
+        tags=["S01", "Debug", "LivingRoom"],
+        folder=f"{FOLDER_ROOT}/Debug",
+    )
+    _spawn_marker(
+        f"{PREFIX}Debug_KitchenCenter",
+        (kitchen_x, kitchen_y, GROUND_FLOOR_Z + 50.0),
+        tags=["S01", "Debug", "Kitchen"],
         folder=f"{FOLDER_ROOT}/Debug",
     )
 
@@ -486,22 +555,39 @@ def build_blockout():
     except Exception:
         pass
 
-    # --- Fire pocket (basement) + heat cue (living room) ---
-    fire_bp_class = unreal.EditorAssetLibrary.load_blueprint_class(FIRE_BP)
-    _spawn_class(
-        f"{PREFIX}BasementFire",
-        fire_bp_class,
-        (center_x - 350.0, center_y, BASEMENT_FLOOR_Z + 60.0),
-        folder=f"{FOLDER_ROOT}/Basement",
-        tags=["S01", "Env", "Basement", "Fire"],
-    )
+    # --- Fire pocket (basement) + mismatch cues (kitchen visible, living room hotter) ---
+    fire_bp_class = None
+    try:
+        fire_bp_class = unreal.EditorAssetLibrary.load_blueprint_class(FIRE_BP)
+    except Exception:
+        fire_bp_class = None
+
+    if fire_bp_class:
+        _spawn_class(
+            f"{PREFIX}BasementFirePocket",
+            fire_bp_class,
+            (living_x, living_y, BASEMENT_FLOOR_Z + 60.0),
+            folder=f"{FOLDER_ROOT}/Basement",
+            tags=["S01", "Env", "Basement", "Fire", "Pocket"],
+        )
+
+        # Visible kitchen fire on ground floor (but not the hottest zone).
+        _spawn_class(
+            f"{PREFIX}KitchenFire_Visible",
+            fire_bp_class,
+            (kitchen_x, kitchen_y + 150.0, GROUND_FLOOR_Z + 30.0),
+            folder=f"{FOLDER_ROOT}/Ground/Kitchen",
+            tags=["S01", "Env", "Ground", "Kitchen", "Fire", "Visible"],
+        )
+    else:
+        _log(f"Fire blueprint missing/unloadable: {FIRE_BP} (skipping fire actors)")
 
     heat_light = _spawn_class(
         f"{PREFIX}HeatLight_LivingRoom",
         unreal.PointLight,
-        (center_x - 350.0, center_y, GROUND_FLOOR_Z + 140.0),
+        (living_x, living_y, GROUND_FLOOR_Z + 140.0),
         folder=f"{FOLDER_ROOT}/LivingRoom",
-        tags=["S01", "Env", "Heat"],
+        tags=["S01", "Env", "Heat", "LivingRoom", "HotZone"],
     )
     try:
         plc = heat_light.get_component_by_class(unreal.PointLightComponent)
@@ -512,28 +598,130 @@ def build_blockout():
     except Exception:
         pass
 
-    fire_cue = _load(FIRE_CUE)
-    amb = _spawn_class(
-        f"{PREFIX}Amb_Fire_Basement",
-        unreal.AmbientSound,
-        (center_x - 350.0, center_y, BASEMENT_FLOOR_Z + 80.0),
-        folder=f"{FOLDER_ROOT}/Basement",
-        tags=["S01", "Env", "Audio", "Basement"],
+    # Audio placeholders for the "too quiet" interior and the collapse payoff.
+    # These are meant to be driven by Sequencer/Blueprint later (mute/unmute, swap cues, etc.).
+    _spawn_ambient_sound(
+        f"{PREFIX}Amb_Basement_Muffled",
+        (living_x, living_y, BASEMENT_FLOOR_Z + 80.0),
+        FIRE_CUE,
+        volume=0.35,
+        muffled=True,
+        cutoff_hz=900.0,
+        tags=["S01", "Env", "Audio", "Basement", "Muffled", "PreCollapse"],
+        folder=f"{FOLDER_ROOT}/Basement/Audio",
     )
-    try:
-        ac = amb.get_editor_property("audio_component")
-        ac.set_editor_property("sound", fire_cue)
-        ac.set_editor_property("volume_multiplier", 0.7)
-    except Exception:
-        pass
+    _spawn_ambient_sound(
+        f"{PREFIX}Amb_Basement_Roar",
+        (living_x, living_y, BASEMENT_FLOOR_Z + 80.0),
+        FIRE_CUE,
+        volume=0.85,
+        muffled=False,
+        tags=["S01", "Env", "Audio", "Basement", "Roar", "PostCollapse"],
+        folder=f"{FOLDER_ROOT}/Basement/Audio",
+    )
+
+    # Low-frequency instability bed (very subtle; give sound designers an anchor point).
+    _spawn_ambient_sound(
+        f"{PREFIX}Amb_Rumble_Subtle",
+        (living_x, living_y, GROUND_FLOOR_Z + 40.0),
+        FIRE_CUE,
+        volume=0.10,
+        muffled=True,
+        cutoff_hz=350.0,
+        tags=["S01", "Env", "Audio", "Rumble", "Instability"],
+        folder=f"{FOLDER_ROOT}/LivingRoom/Audio",
+    )
 
     # --- Story beat marker ---
-    _spawn_class(
+    _spawn_marker(
         f"{PREFIX}Marker_FloorGive",
-        unreal.TargetPoint,
-        (center_x - 350.0, center_y, GROUND_FLOOR_Z + 5.0),
-        folder=f"{FOLDER_ROOT}/LivingRoom",
-        tags=["S01", "Marker", "FloorGive"],
+        (living_x, living_y, GROUND_FLOOR_Z + 5.0),
+        folder=f"{FOLDER_ROOT}/LivingRoom/Markers",
+        tags=["S01", "Marker", "FloorGive", "Regroup"],
+    )
+
+    _spawn_marker(
+        f"{PREFIX}Marker_CollapsePayoff",
+        (living_x, living_y, GROUND_FLOOR_Z + 5.0),
+        folder=f"{FOLDER_ROOT}/LivingRoom/Markers",
+        tags=["S01", "Marker", "Collapse", "Payoff"],
+    )
+
+    # Beat-by-beat navigation markers (for blocking and camera/VO timing).
+    _spawn_marker(
+        f"{PREFIX}Beat_Approach_Exterior",
+        (center_x + EXTERIOR_APPROACH_OFFSET[0], center_y + EXTERIOR_APPROACH_OFFSET[1], GROUND_FLOOR_Z + 5.0),
+        tags=["S01", "Beat", "Approach", "Exterior"],
+        folder=f"{FOLDER_ROOT}/Beats",
+    )
+    _spawn_marker(
+        f"{PREFIX}Beat_Entry_FrontDoor",
+        (center_x + FRONT_DOOR_OFFSET[0], center_y + FRONT_DOOR_OFFSET[1], GROUND_FLOOR_Z + 5.0),
+        tags=["S01", "Beat", "Entry"],
+        folder=f"{FOLDER_ROOT}/Beats",
+    )
+    _spawn_marker(
+        f"{PREFIX}Beat_Threshold_Clear",
+        (center_x + THRESHOLD_OFFSET[0], center_y + THRESHOLD_OFFSET[1], GROUND_FLOOR_Z + 5.0),
+        tags=["S01", "Beat", "ThresholdClear"],
+        folder=f"{FOLDER_ROOT}/Beats",
+    )
+    _spawn_marker(
+        f"{PREFIX}Beat_Kitchen_FirstWater",
+        (kitchen_x, kitchen_y + 120.0, GROUND_FLOOR_Z + 5.0),
+        tags=["S01", "Beat", "Kitchen", "Water1"],
+        folder=f"{FOLDER_ROOT}/Beats",
+    )
+    _spawn_marker(
+        f"{PREFIX}Beat_LivingRoom_HeatCheck",
+        (living_x, living_y, GROUND_FLOOR_Z + 5.0),
+        tags=["S01", "Beat", "LivingRoom", "HeatCheck"],
+        folder=f"{FOLDER_ROOT}/Beats",
+    )
+    _spawn_marker(
+        f"{PREFIX}Beat_Regroup_FloorGive",
+        (living_x - 80.0, living_y, GROUND_FLOOR_Z + 5.0),
+        tags=["S01", "Beat", "Regroup", "FloorGive"],
+        folder=f"{FOLDER_ROOT}/Beats",
+    )
+    _spawn_marker(
+        f"{PREFIX}Beat_Evac_Command",
+        (living_x - 220.0, living_y, GROUND_FLOOR_Z + 5.0),
+        tags=["S01", "Beat", "Evac"],
+        folder=f"{FOLDER_ROOT}/Beats",
+    )
+    _spawn_marker(
+        f"{PREFIX}Beat_Aftermath_Exterior",
+        (center_x + EXTERIOR_AFTERMATH_OFFSET[0], center_y + EXTERIOR_AFTERMATH_OFFSET[1], GROUND_FLOOR_Z + 5.0),
+        tags=["S01", "Beat", "Aftermath", "Exterior"],
+        folder=f"{FOLDER_ROOT}/Beats",
+    )
+
+    # Simple prop placeholders to drive subtle jitter/sway (animation/shake system later).
+    # Keep them cheap: thin cube "lamp" + a couple of small props in the living room.
+    _spawn_static_mesh_actor(
+        f"{PREFIX}Prop_Lamp_Hanging",
+        CUBE,
+        (living_x + 60.0, living_y - 120.0, GROUND_FLOOR_Z + 240.0),
+        scale=(0.10, 0.10, 0.50),
+        tags=["S01", "Prop", "Jitter", "Sway", "LivingRoom"],
+        folder=f"{FOLDER_ROOT}/LivingRoom/Props",
+    )
+    _spawn_static_mesh_actor(
+        f"{PREFIX}Prop_Small_01",
+        CUBE,
+        (living_x - 120.0, living_y + 80.0, GROUND_FLOOR_Z + 25.0),
+        scale=(0.30, 0.30, 0.30),
+        tags=["S01", "Prop", "Jitter", "LivingRoom"],
+        folder=f"{FOLDER_ROOT}/LivingRoom/Props",
+    )
+    _spawn_static_mesh_actor(
+        f"{PREFIX}Prop_Small_02",
+        CUBE,
+        (kitchen_x + 80.0, kitchen_y - 60.0, GROUND_FLOOR_Z + 25.0),
+        scale=(0.25, 0.25, 0.25),
+        tags=["S01", "Prop", "Jitter", "Kitchen"],
+        folder=f"{FOLDER_ROOT}/Ground/Kitchen/Props",
     )
 
     _log("Blockout build complete.")

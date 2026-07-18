@@ -1,6 +1,6 @@
 ---
 name: ue-blockout-multistorey
-description: Use when the user wants a UE Editor Python blockout/graybox for a multi-storey building (basement/ground/upper floors) with correct wall rotation/height, doors+windows, stairs, roof, and simple materials, especially when bugs like "basement became a ceiling" or "walls all face one way" appear. Produces a single runnable .py script under ue_scripts/.
+description: Use when the user wants a UE Editor Python blockout/graybox for a multi-storey building (basement/ground/upper floors) with correct wall rotation/height, doors+windows, stairs, roof, and simple materials, especially when bugs like "basement became a ceiling" or "walls all face one way" appear. Produces a runnable build .py under ue_scripts/ plus a companion *_undo.py that deletes everything spawned by that build script.
 ---
 
 # UE Multi-Storey Blockout (Python Script Generator)
@@ -15,7 +15,12 @@ Use ONLY when the user asks for a blockout / graybox / “quick environment buil
 
 ## Output Contract
 
-Produce a **single** Unreal Editor Python script (one file) suitable for `Tools -> Execute Python Script...`, usually saved under `ue_scripts/<name>.py`.
+Produce:
+
+1. A Unreal Editor Python build script suitable for `Tools -> Execute Python Script...`, usually saved under `ue_scripts/<name>.py`.
+1. A companion undo script suitable for `Tools -> Execute Python Script...`, usually saved under `ue_scripts/<name>_undo.py`.
+
+The undo script must delete only what the build script spawned (see `RUN_ID` requirement below).
 
 The generated script must:
 
@@ -33,6 +38,21 @@ Generate visible steps and also include a simple ramp-like collision path (brush
 1. Apply reasonable materials/textures to slabs, walls, roof (use StarterContent if present; fall back safely).
 1. Include an optional `REBUILD_CLEAN` prefix-delete mode.
 1. Add a few debug markers (labels/tags) so a user can quickly locate each storey.
+1. Define a `RUN_ID` constant (string) and tag every spawned actor with a run-id tag so the undo script can delete exactly what was added by this generated script.
+
+### Undo Script Requirement (New)
+
+Alongside the build script, generate `ue_scripts/<name>_undo.py`.
+
+Rules:
+
+1. The build script must define `RUN_ID = "..."` near the top.
+1. The build script must tag each spawned actor with something like:
+`OPENCODE_RUN_ID_<RUN_ID>` (simple tag string) or `OPENCODE_RUN_ID` plus a value-like tag.
+Prefer the simple single tag string form because `Actor.tags` is an array of `Name`.
+1. The undo script must contain the exact same `RUN_ID` constant and delete actors by that tag first.
+1. The undo script may also support deleting by `PREFIX`/`FOLDER_ROOT` as a fallback, but the primary mode must be run-id targeted so it only removes what was added by that generated build script.
+1. Both scripts should log what they did and how many actors were affected.
 
 ## PCG-First Requirement (New)
 
@@ -207,7 +227,9 @@ For the “ramp collision volume” requirement:
 Generate a script with:
 
 1. `PREFIX`, `FOLDER_ROOT`, `REBUILD_CLEAN`.
+1. `RUN_ID` and `RUN_TAG` (derived from `RUN_ID`).
 1. `_ensure_level_open`, `_load`, `_spawn_static_mesh_actor`, `_delete_existing_with_prefix`.
+1. A small helper like `_tag_spawned(actor)` that adds `RUN_TAG` and any other useful tags.
 1. Math helpers:
 `_deg_atan2`, `_poly_signed_area_xy`, `_wall_rot_for_edge`.
 1. Build functions:
@@ -217,6 +239,12 @@ Generate a script with:
 1. Stairs helpers:
 `spawn_stairs_steps(...)` (and `spawn_stairs_ramp_collider(...)` if possible).
 1. `build_blockout()` entry point.
+
+Also generate a separate undo script with:
+
+1. The same `RUN_ID`, `RUN_TAG`, `PREFIX`, `FOLDER_ROOT` constants.
+1. `_delete_existing_with_run_tag()` that finds actors with `RUN_TAG` and deletes them via `EditorActorSubsystem`.
+1. An `undo()` entry point that logs a count and can be run standalone.
 
 ### PCG Script Additions (When PCG Is Available)
 
@@ -277,7 +305,7 @@ Note: In UE Python, `unreal.EmptyActor` may not be exposed. Prefer `unreal.Targe
 When this skill is loaded, the assistant should behave like:
 
 1. Ask the “First Questions” (only what’s missing).
-1. Generate/update one file under `ue_scripts/` with the contract above.
+1. Generate/update the build script and the companion undo script under `ue_scripts/` with the contract above.
 1. Keep it runnable and self-contained.
 
 ## Notes For The Two Specific Failures Mentioned By Users
