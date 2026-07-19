@@ -10,7 +10,15 @@ export const envSchema = z.object({
   // Optional explicit path to EditorPerProjectUserSettings.ini.
   UNREAL_TOKEN_INI: z.string().optional(),
   UNREAL_TIMEOUT_MS: z.coerce.number().int().positive().default(2500),
-  UNREAL_MOCK: z.string().optional()
+  UNREAL_MOCK: z.string().optional(),
+
+  // Capability packs and safety gates
+  UNREAL_MCP_PACKS: z.string().optional(),
+  UNREAL_MCP_WRITE_ENABLED: z.string().optional(),
+
+  // Local-only telemetry (NDJSON)
+  UNREAL_MCP_TELEMETRY: z.string().optional(),
+  UNREAL_MCP_TELEMETRY_PATH: z.string().optional()
 });
 
 export type McpEnv = z.infer<typeof envSchema>;

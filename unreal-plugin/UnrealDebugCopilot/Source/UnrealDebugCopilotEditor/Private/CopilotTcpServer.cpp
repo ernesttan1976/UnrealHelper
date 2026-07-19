@@ -25,9 +25,12 @@
 #include "IContentBrowserSingleton.h"
 #include "EditorViewportClient.h"
 #include "FileHelpers.h"
+#include "ScopedTransaction.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SWindow.h"
 #include "EditorModeManager.h"
+
+#include "Misc/Guid.h"
 
 #include "Components/SceneComponent.h"
 #include "Engine/Blueprint.h"
@@ -49,11 +52,10 @@
 // Blueprint compilation
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/BlueprintEditorUtils.h"
-#include "KismetCompiler/Public/CompilerResultsLog.h"
+#include "Kismet2/CompilerResultsLog.h"
 
 // Diagnostic message tokens
 #include "Logging/TokenizedMessage.h"
-#include "Misc/MessageToken.h"
 #include "Misc/UObjectToken.h"
 
 #include <atomic>
@@ -66,6 +68,10 @@ namespace
   constexpr double kCompileGameThreadWaitSeconds = 30.0;
 
   FCriticalSection GCompileMutex;
+
+  // Single active transaction for safe write workflows (v0.1 primitive).
+  TUniquePtr<FScopedTransaction> GActiveTransaction;
+  FString GActiveTransactionId;
 
   // Stores the last captured compile/diagnostic payloads so follow-up tools can query details.
   // Keys are Blueprint object path (preferred) or asset/package path.
@@ -505,9 +511,15 @@ namespace
           TEXT("get_editor_status"),
           TEXT("get_engine_version"),
           TEXT("get_current_project"),
-          TEXT("get_plugin_version"),
-          TEXT("get_protocol_capabilities"),
-          TEXT("get_current_level"),
+           TEXT("get_plugin_version"),
+           TEXT("get_protocol_capabilities"),
+
+           // v0.1 transaction primitives
+           TEXT("begin_transaction"),
+           TEXT("end_transaction"),
+           TEXT("cancel_transaction"),
+
+           TEXT("get_current_level"),
           TEXT("get_open_levels"),
           TEXT("get_open_editors"),
           TEXT("get_open_asset_editors"),
@@ -561,6 +573,60 @@ namespace
           Supported.Add(MakeShared<FJsonValueString>(M));
         }
         Result->SetArrayField(TEXT("supported_methods"), Supported);
+      }
+      else if (Method == TEXT("begin_transaction"))
+      {
+        if (GActiveTransaction.IsValid())
+        {
+          Result->SetStringField(TEXT("error_code"), TEXT("TRANSACTION_ALREADY_ACTIVE"));
+          Result->SetStringField(TEXT("error_message"), TEXT("A transaction is already active"));
+        }
+        else
+        {
+          FString Desc = TEXT("Unreal MCP Transaction");
+          if (Params.IsValid())
+          {
+            Params->TryGetStringField(TEXT("description"), Desc);
+          }
+
+          GActiveTransactionId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
+          GActiveTransaction = MakeUnique<FScopedTransaction>(FText::FromString(Desc));
+          Result->SetStringField(TEXT("transaction_id"), GActiveTransactionId);
+          Result->SetBoolField(TEXT("active"), true);
+        }
+      }
+      else if (Method == TEXT("end_transaction") || Method == TEXT("cancel_transaction"))
+      {
+        if (!GActiveTransaction.IsValid())
+        {
+          Result->SetStringField(TEXT("error_code"), TEXT("TRANSACTION_NOT_ACTIVE"));
+          Result->SetStringField(TEXT("error_message"), TEXT("No active transaction"));
+        }
+        else
+        {
+          FString RequestedId;
+          if (!Params.IsValid() || !Params->TryGetStringField(TEXT("transaction_id"), RequestedId) || RequestedId.IsEmpty())
+          {
+            Result->SetStringField(TEXT("error_code"), TEXT("INVALID_REQUEST"));
+            Result->SetStringField(TEXT("error_message"), TEXT("Missing transaction_id"));
+          }
+          else if (RequestedId != GActiveTransactionId)
+          {
+            Result->SetStringField(TEXT("error_code"), TEXT("TRANSACTION_ID_MISMATCH"));
+            Result->SetStringField(TEXT("error_message"), TEXT("transaction_id does not match the active transaction"));
+            Result->SetStringField(TEXT("active_transaction_id"), GActiveTransactionId);
+          }
+          else
+          {
+            if (Method == TEXT("cancel_transaction"))
+            {
+              GActiveTransaction->Cancel();
+            }
+            GActiveTransaction.Reset();
+            GActiveTransactionId.Empty();
+            Result->SetBoolField(TEXT("active"), false);
+          }
+        }
       }
       else if (Method == TEXT("get_selected_actors"))
       {
@@ -1481,7 +1547,7 @@ namespace
 
             for (const TSharedRef<IMessageToken>& Tok : M->GetMessageTokens())
             {
-              if (Tok->GetType() != EMessageToken::UObject)
+              if (Tok->GetType() != EMessageToken::Object)
               {
                 continue;
               }
@@ -2365,6 +2431,29 @@ private:
          if (!bCompleted || !Result.IsValid())
          {
           SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          return;
+        }
+
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
+        return;
+      }
+
+      if (Method == TEXT("begin_transaction") || Method == TEXT("end_transaction") || Method == TEXT("cancel_transaction"))
+      {
+        bool bCompleted = false;
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, Params, bCompleted);
+        if (!bCompleted || !Result.IsValid())
+        {
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          return;
+        }
+
+        FString ErrCode;
+        FString ErrMsg;
+        if (Result->TryGetStringField(TEXT("error_code"), ErrCode))
+        {
+          Result->TryGetStringField(TEXT("error_message"), ErrMsg);
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, *ErrCode, ErrMsg.IsEmpty() ? TEXT("Transaction operation failed") : *ErrMsg)));
           return;
         }
 

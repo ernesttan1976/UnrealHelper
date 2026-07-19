@@ -2,6 +2,9 @@
 **/dist/
 *.log
 
+# Local-only telemetry
+mcp-server/.telemetry/
+
 # Unreal build artifacts (plugin will live inside an Unreal project)
 **/Binaries/
 **/Intermediate/

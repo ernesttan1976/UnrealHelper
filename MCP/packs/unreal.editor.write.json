@@ -1,0 +1,1 @@
+{ "name": "unreal.editor.write", "description": "Editor write primitives (transactions, save gating)", "access": "write" }

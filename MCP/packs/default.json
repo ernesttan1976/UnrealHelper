@@ -1,0 +1,10 @@
+{
+  "version": "0.1",
+  "enabled_packs": [
+    "unreal.core",
+    "unreal.editor.read",
+    "unreal.blueprint.read",
+    "unreal.diagnostics"
+  ],
+  "write_enabled": false
+}

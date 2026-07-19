@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Unreal MCP Tool Registry",
+  "type": "object",
+  "required": ["version", "tools"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string" },
+    "tools": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/tool" },
+      "minItems": 1
+    }
+  },
+  "definitions": {
+    "tool": {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "domain",
+        "priority",
+        "access",
+        "risk",
+        "requires_editor",
+        "packs",
+        "inputSchema"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$" },
+        "description": { "type": "string" },
+        "domain": { "type": "string" },
+        "priority": { "type": "integer", "minimum": 0 },
+        "access": { "type": "string", "enum": ["read", "write"] },
+        "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+        "requires_editor": { "type": "boolean" },
+        "pie": { "type": "string", "enum": ["any", "stopped", "running"] },
+        "packs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "skill": { "type": ["string", "null"] },
+        "stability": { "type": "string", "enum": ["experimental", "stable", "deprecated"] },
+        "owner": { "type": "string", "enum": ["mcp", "plugin"] },
+        "feature_flag": { "type": "string" },
+        "test_tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "inputSchema": { "type": "object" }
+      }
+    }
+  }
+}

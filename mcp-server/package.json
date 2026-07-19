@@ -7,12 +7,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/generate-tools.mjs && tsc -p tsconfig.json",
     "dev": "node --enable-source-maps dist/index.js",
     "start": "node --enable-source-maps dist/index.js",
     "probe": "node --enable-source-maps dist/probe.js",
     "test:priority": "node --enable-source-maps dist/test-priority.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test": "npm run build && node --test tests/**/*.spec.mjs",
+    "typecheck": "node scripts/generate-tools.mjs && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

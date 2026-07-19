@@ -1,0 +1,1 @@
+{ "name": "unreal.editor.read", "description": "Editor state and selections (read-only)", "access": "read" }

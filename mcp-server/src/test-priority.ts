@@ -51,12 +51,12 @@ function parseArgs(argv: string[]): Cli {
           "Usage:",
           "  npm run build && npm run test:priority -- --priority 0 [--probe] [--allow-missing] [--plan <path>]",
           "",
-          "Notes:",
-          "  - By default, missing tools and tool call errors fail the run.",
-          "  - Set UNREAL_MOCK=1 to run without Unreal.",
-          ""
-        ].join("\n")
-      );
+           "Notes:",
+           "  - By default, missing tools and tool call errors fail the run.",
+           "  - By default, the server is run with UNREAL_MOCK=1 (set UNREAL_MOCK=0 to require a live Unreal connection).",
+           ""
+         ].join("\n")
+       );
       process.exit(0);
     }
   }
@@ -125,7 +125,7 @@ function extractPriorityTools(plan: string, priority: number): string[] {
   return tools;
 }
 
-function envSubsetForServer(): Record<string, string> {
+function envSubsetForServer(priority: number): Record<string, string> {
   const keys = [
     "UNREAL_HOST",
     "UNREAL_PORT",
@@ -133,13 +133,35 @@ function envSubsetForServer(): Record<string, string> {
     "UNREAL_PROJECT_DIR",
     "UNREAL_TOKEN_INI",
     "UNREAL_TIMEOUT_MS",
-    "UNREAL_MOCK"
+    "UNREAL_MOCK",
+    "UNREAL_MCP_PACKS",
+    "UNREAL_MCP_WRITE_ENABLED"
   ];
   const env: Record<string, string> = {};
   for (const k of keys) {
     const v = process.env[k];
     if (typeof v === "string" && v.length > 0) env[k] = v;
   }
+
+  // Priority tests should be runnable in any environment.
+  // Default to mock mode unless explicitly disabled (UNREAL_MOCK=0).
+  if (env.UNREAL_MOCK === undefined) {
+    env.UNREAL_MOCK = "1";
+  }
+
+  // Default policy hides write tools. Priority 4 includes write tools (compile/refresh/etc),
+  // so opt-in to write packs for this test harness.
+  if (env.UNREAL_MCP_PACKS === undefined) {
+    const base = ["unreal.core", "unreal.editor.read", "unreal.blueprint.read", "unreal.diagnostics"];
+    if (priority >= 4) {
+      base.push("unreal.blueprint.write", "unreal.editor.write");
+    }
+    env.UNREAL_MCP_PACKS = base.join(",");
+  }
+  if (env.UNREAL_MCP_WRITE_ENABLED === undefined && priority >= 4) {
+    env.UNREAL_MCP_WRITE_ENABLED = "1";
+  }
+
   return env;
 }
 
@@ -160,7 +182,7 @@ async function main() {
     command: "node",
     args: ["--enable-source-maps", serverEntry],
     cwd: process.cwd(),
-    env: envSubsetForServer(),
+    env: envSubsetForServer(cli.priority),
     stderr: "pipe"
   });
 

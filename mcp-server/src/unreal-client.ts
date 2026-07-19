@@ -23,6 +23,7 @@ export class UnrealClient {
     }
   >();
   #lastIssuedRequestId: string | null = null;
+  #mockTransactionId: string | null = null;
 
   constructor(opts: UnrealClientOptions) {
     this.#opts = opts;
@@ -479,6 +480,10 @@ export class UnrealClient {
             "get_current_project",
             "get_plugin_version",
             "get_protocol_capabilities",
+
+            "begin_transaction",
+            "end_transaction",
+            "cancel_transaction",
             "get_selected_actors",
             "get_open_editors",
             "get_open_asset_editors",
@@ -523,6 +528,63 @@ export class UnrealClient {
             "validate_blueprint_dependencies"
           ]
         }
+      };
+    }
+
+    if (method === "begin_transaction") {
+      if (this.#mockTransactionId) {
+        return {
+          protocol_version: 1,
+          request_id,
+          ok: false,
+          error: { code: "TRANSACTION_ALREADY_ACTIVE", message: "Mock: transaction already active" }
+        };
+      }
+      this.#mockTransactionId = randomUUID();
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { transaction_id: this.#mockTransactionId, active: true }
+      };
+    }
+
+    if (method === "end_transaction" || method === "cancel_transaction") {
+      const tid = typeof _params?.transaction_id === "string" ? String((_params as any).transaction_id) : "";
+      if (!this.#mockTransactionId) {
+        return {
+          protocol_version: 1,
+          request_id,
+          ok: false,
+          error: { code: "TRANSACTION_NOT_ACTIVE", message: "Mock: no active transaction" }
+        };
+      }
+      if (!tid) {
+        return {
+          protocol_version: 1,
+          request_id,
+          ok: false,
+          error: { code: "INVALID_REQUEST", message: "Mock: missing transaction_id" }
+        };
+      }
+      if (tid !== this.#mockTransactionId) {
+        return {
+          protocol_version: 1,
+          request_id,
+          ok: false,
+          error: {
+            code: "TRANSACTION_ID_MISMATCH",
+            message: "Mock: transaction_id mismatch",
+            details: { active_transaction_id: this.#mockTransactionId }
+          }
+        };
+      }
+      this.#mockTransactionId = null;
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { active: false }
       };
     }
     if (method === "get_engine_version") {
