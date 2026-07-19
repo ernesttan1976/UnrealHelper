@@ -90,7 +90,7 @@ UNREAL_HOST=127.0.0.1 UNREAL_PORT=17777 UNREAL_TOKEN=<token> node dist/probe.js
 ```
 cd mcp-server
 npm run build
-npm run test:priority -- --priority 2
+npm run test:priority -- --priority 3
 ```
 
 

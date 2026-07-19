@@ -786,6 +786,353 @@ const TOOL_DEFS = [
       },
       additionalProperties: false
     }
+  },
+
+  // Priority 3 — Blueprint search and navigation
+  {
+    name: "unreal.find_blueprint_nodes",
+    description: "Search Blueprint graph nodes by title/class (best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string", description: "Graph name; if omitted uses the Blueprint's default graph." },
+        query: { type: "string", description: "Substring match against node title (case-insensitive)." },
+        title_contains: { type: "string" },
+        class_contains: { type: "string" },
+        all_graphs: { type: "boolean", description: "If true, scans all graphs in the Blueprint (bounded)." },
+        limit: { type: "number", description: "Max nodes returned (default 50, max 500)." },
+        max_graphs: { type: "number", description: "Max graphs scanned when all_graphs=true (default 25, max 100)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_events",
+    description: "Locate overlap, input, tick and custom events (heuristic; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        query: { type: "string", description: "Substring match against node title (case-insensitive)." },
+        all_graphs: { type: "boolean" },
+        limit: { type: "number" },
+        max_graphs: { type: "number" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_function_calls",
+    description: "Find calls to a particular function (heuristic; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        function_name: { type: "string", description: "Substring match against node title." },
+        query: { type: "string" },
+        all_graphs: { type: "boolean" },
+        limit: { type: "number" },
+        max_graphs: { type: "number" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_variable_reads",
+    description: "Locate reads of a variable (heuristic; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        variable_name: { type: "string" },
+        query: { type: "string" },
+        all_graphs: { type: "boolean" },
+        limit: { type: "number" },
+        max_graphs: { type: "number" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_variable_writes",
+    description: "Locate assignments to a variable (heuristic; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        variable_name: { type: "string" },
+        query: { type: "string" },
+        all_graphs: { type: "boolean" },
+        limit: { type: "number" },
+        max_graphs: { type: "number" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_component_references",
+    description: "Find nodes targeting a component (heuristic; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        component_name: { type: "string" },
+        query: { type: "string" },
+        all_graphs: { type: "boolean" },
+        limit: { type: "number" },
+        max_graphs: { type: "number" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_asset_references",
+    description: "Find references to an asset (heuristic; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        asset_query: { type: "string", description: "Substring match against pin default values and node title." },
+        query: { type: "string" },
+        all_graphs: { type: "boolean" },
+        limit: { type: "number" },
+        max_graphs: { type: "number" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_class_references",
+    description: "Find usages of a class (heuristic; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        class_query: { type: "string", description: "Substring match against pin types/defaults and node title." },
+        query: { type: "string" },
+        all_graphs: { type: "boolean" },
+        limit: { type: "number" },
+        max_graphs: { type: "number" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_unconnected_pins",
+    description: "Locate unconnected pins (bounded; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        exec_only: { type: "boolean", description: "If true, only consider exec pins." },
+        data_only: { type: "boolean", description: "If true, only consider non-exec pins." },
+        limit: { type: "number", description: "Max pins returned (default 200, max 2000)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_dead_ends",
+    description: "Execution paths with no continuation (heuristic; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        limit: { type: "number", description: "Max nodes returned (default 50, max 500)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_entry_points",
+    description: "Events and externally called functions (heuristic; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        limit: { type: "number", description: "Max nodes returned (default 50, max 500)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_callers",
+    description: "Find callers of a function or event (alias of find_blueprint_function_calls; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        function_name: { type: "string" },
+        query: { type: "string" },
+        all_graphs: { type: "boolean" },
+        limit: { type: "number" },
+        max_graphs: { type: "number" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.find_blueprint_implementations",
+    description: "Find implementations of interface calls (best-effort; may be unimplemented).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        interface_name: { type: "string" },
+        function_name: { type: "string" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.trace_blueprint_path",
+    description: "Find a graph path between two nodes (bounded; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        from_node_id: { type: "string" },
+        to_node_id: { type: "string" },
+        max_steps: { type: "number", description: "Max edges in the returned path (default 32, max 256)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_upstream_nodes",
+    description: "Nodes that contribute to a pin/value (heuristic graph traversal; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        node_id: { type: "string" },
+        max_depth: { type: "number", description: "Traversal depth (default 3, max 20)." },
+        max_nodes: { type: "number", description: "Max nodes returned (default 200, max 2000)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_downstream_nodes",
+    description: "Nodes affected by a node/output (heuristic graph traversal; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        node_id: { type: "string" },
+        max_depth: { type: "number", description: "Traversal depth (default 3, max 20)." },
+        max_nodes: { type: "number", description: "Max nodes returned (default 200, max 2000)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_node_neighbourhood",
+    description: "Small graph around one node (bounded; best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        node_id: { type: "string" },
+        max_depth: { type: "number", description: "Traversal depth (default 1, max 10)." },
+        max_nodes: { type: "number", description: "Max nodes returned (default 200, max 2000)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.focus_blueprint_node",
+    description: "Navigate the editor to a node (not yet implemented; placeholder tool).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        node_id: { type: "string" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.open_blueprint_graph",
+    description: "Open and focus a graph (not yet implemented; placeholder tool).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.select_blueprint_nodes",
+    description: "Select nodes for the user to inspect (not yet implemented; placeholder tool).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        graph: { type: "string" },
+        node_ids: { type: "array", items: { type: "string" } }
+      },
+      additionalProperties: false
+    }
   }
 ] as const;
 
@@ -1613,6 +1960,596 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return asToolResult({ ok: true, graph_name: r.graph_name ?? "", comments: Array.isArray(r.comment_boxes) ? r.comment_boxes : [] });
       }
       return asToolResult({ ok: true, comments: [], note: "Blueprint graph not available" });
+    }
+
+    const clampInt = (v: unknown, def: number, min: number, max: number) => {
+      if (typeof v !== "number" || !Number.isFinite(v)) return def;
+      const n = Math.floor(v);
+      return Math.max(min, Math.min(max, n));
+    };
+
+    const listGraphsBestEffort = async () => {
+      const bp = await safeInspectBlueprint();
+      if ((bp as any).__missing) return [] as string[];
+      const out: string[] = [];
+      for (const g of Array.isArray((bp as any).ubergraph_pages) ? (bp as any).ubergraph_pages : []) out.push(String(g));
+      for (const g of Array.isArray((bp as any).function_graphs) ? (bp as any).function_graphs : []) out.push(String(g));
+      for (const g of Array.isArray((bp as any).macro_graphs) ? (bp as any).macro_graphs : []) out.push(String(g));
+      return [...new Set(out.filter((s) => typeof s === "string" && s.length > 0))];
+    };
+
+    const fetchGraph = async (graphName: string | undefined, opts: Record<string, unknown>) => {
+      const res = await run("unreal.get_blueprint_graph", () =>
+        client.getBlueprintGraph({
+          ...bpRef(),
+          graph: graphName,
+          ...opts
+        })
+      );
+      if (typeof res === "object" && res !== null && (res as any).ok === true) {
+        return (res as any).result ?? null;
+      }
+      return null;
+    };
+
+    const summarizeNode = (n: any, graph_name: string) => ({
+      graph: graph_name,
+      id: n?.id ?? "",
+      title: n?.title ?? "",
+      class: n?.class ?? "",
+      pos_x: n?.pos_x ?? 0,
+      pos_y: n?.pos_y ?? 0
+    });
+
+    const findAcrossGraphs = async (opts: {
+      graph?: string;
+      all_graphs?: boolean;
+      max_graphs?: number;
+      limit?: number;
+      mode?: string;
+      include_pins?: boolean;
+      include_edges?: boolean;
+      predicate: (node: any, graphName: string, graphExport: any) => boolean;
+      extraPerMatch?: (node: any, graphName: string, graphExport: any) => Record<string, unknown>;
+    }) => {
+      const limit = clampInt(opts.limit, 50, 0, 500);
+      const maxGraphs = clampInt(opts.max_graphs, 25, 1, 100);
+
+      let graphs: Array<string | undefined> = [typeof opts.graph === "string" && opts.graph.length > 0 ? opts.graph : undefined];
+      if (opts.all_graphs) {
+        const gs = await listGraphsBestEffort();
+        graphs = gs.slice(0, maxGraphs);
+        if (graphs.length === 0) graphs = [undefined];
+      }
+
+      const matches: any[] = [];
+      let scannedGraphs = 0;
+      for (const g of graphs) {
+        if (matches.length >= limit) break;
+        const exportRes = await fetchGraph(typeof g === "string" ? g : undefined, {
+          mode: opts.mode ?? "full",
+          include_pins: Boolean(opts.include_pins),
+          include_edges: Boolean(opts.include_edges),
+          max_nodes: 2000,
+          max_edges: 20000
+        });
+        if (!exportRes) continue;
+        scannedGraphs += 1;
+
+        const graph_name = String(exportRes.graph_name ?? g ?? "");
+        const nodes: any[] = Array.isArray(exportRes.nodes) ? exportRes.nodes : [];
+        for (const n of nodes) {
+          if (matches.length >= limit) break;
+          if (!opts.predicate(n, graph_name, exportRes)) continue;
+          const base = summarizeNode(n, graph_name);
+          matches.push({
+            ...base,
+            ...(opts.extraPerMatch ? opts.extraPerMatch(n, graph_name, exportRes) : {})
+          });
+        }
+      }
+
+      return { limit, scanned_graphs: scannedGraphs, returned: matches.length, matches };
+    };
+
+    if (name === "unreal.find_blueprint_nodes") {
+      const query = typeof args.query === "string" ? args.query : typeof args.title_contains === "string" ? args.title_contains : "";
+      const class_contains = typeof args.class_contains === "string" ? args.class_contains : "";
+      const all_graphs = typeof args.all_graphs === "boolean" ? args.all_graphs : false;
+      const max_graphs = typeof args.max_graphs === "number" ? args.max_graphs : undefined;
+      const limit = typeof args.limit === "number" ? args.limit : undefined;
+
+      const res = await findAcrossGraphs({
+        graph: typeof args.graph === "string" ? args.graph : undefined,
+        all_graphs,
+        max_graphs,
+        limit,
+        predicate: (n) => containsCI(n?.title, query) && containsCI(n?.class, class_contains)
+      });
+      return asToolResult({ ok: true, ...res, query, class_contains, all_graphs });
+    }
+
+    if (name === "unreal.find_blueprint_events") {
+      const query = typeof args.query === "string" ? args.query : "";
+      const all_graphs = typeof args.all_graphs === "boolean" ? args.all_graphs : false;
+      const max_graphs = typeof args.max_graphs === "number" ? args.max_graphs : undefined;
+      const limit = typeof args.limit === "number" ? args.limit : undefined;
+
+      const res = await findAcrossGraphs({
+        graph: typeof args.graph === "string" ? args.graph : undefined,
+        all_graphs,
+        max_graphs,
+        limit,
+        predicate: (n) => {
+          const cls = String(n?.class ?? "");
+          const title = String(n?.title ?? "");
+          const looksEvent =
+            cls.includes("UK2Node_Event") ||
+            cls.includes("UK2Node_CustomEvent") ||
+            cls.includes("UK2Node_ComponentBoundEvent") ||
+            title.toLowerCase().startsWith("event ");
+          return looksEvent && containsCI(title, query);
+        }
+      });
+      return asToolResult({ ok: true, ...res, query, all_graphs, note: "Heuristic match: checks node class/title." });
+    }
+
+    const findCallsLike = async (toolName: string) => {
+      const query =
+        typeof args.function_name === "string"
+          ? args.function_name
+          : typeof args.query === "string"
+            ? args.query
+            : "";
+      const all_graphs = typeof args.all_graphs === "boolean" ? args.all_graphs : false;
+      const max_graphs = typeof args.max_graphs === "number" ? args.max_graphs : undefined;
+      const limit = typeof args.limit === "number" ? args.limit : undefined;
+
+      const res = await findAcrossGraphs({
+        graph: typeof args.graph === "string" ? args.graph : undefined,
+        all_graphs,
+        max_graphs,
+        limit,
+        predicate: (n) => {
+          const cls = String(n?.class ?? "");
+          if (!cls.includes("UK2Node_CallFunction")) return false;
+          return containsCI(n?.title, query);
+        }
+      });
+      return asToolResult({ ok: true, tool: toolName, ...res, query, all_graphs, note: "Heuristic: CallFunction nodes filtered by title substring." });
+    };
+
+    if (name === "unreal.find_blueprint_function_calls") {
+      return await findCallsLike(name);
+    }
+
+    if (name === "unreal.find_blueprint_callers") {
+      return await findCallsLike(name);
+    }
+
+    if (name === "unreal.find_blueprint_variable_reads") {
+      const query =
+        typeof args.variable_name === "string" ? args.variable_name : typeof args.query === "string" ? args.query : "";
+      const all_graphs = typeof args.all_graphs === "boolean" ? args.all_graphs : false;
+      const max_graphs = typeof args.max_graphs === "number" ? args.max_graphs : undefined;
+      const limit = typeof args.limit === "number" ? args.limit : undefined;
+      const res = await findAcrossGraphs({
+        graph: typeof args.graph === "string" ? args.graph : undefined,
+        all_graphs,
+        max_graphs,
+        limit,
+        predicate: (n) => {
+          const cls = String(n?.class ?? "");
+          if (cls.includes("UK2Node_VariableGet")) return containsCI(n?.title, query);
+          // Fallback: title contains variable name.
+          return query.length > 0 && containsCI(String(n?.title ?? ""), query) && String(n?.title ?? "").toLowerCase().includes("get");
+        }
+      });
+      return asToolResult({ ok: true, ...res, query, all_graphs, note: "Heuristic match: VariableGet nodes and title substring." });
+    }
+
+    if (name === "unreal.find_blueprint_variable_writes") {
+      const query =
+        typeof args.variable_name === "string" ? args.variable_name : typeof args.query === "string" ? args.query : "";
+      const all_graphs = typeof args.all_graphs === "boolean" ? args.all_graphs : false;
+      const max_graphs = typeof args.max_graphs === "number" ? args.max_graphs : undefined;
+      const limit = typeof args.limit === "number" ? args.limit : undefined;
+      const res = await findAcrossGraphs({
+        graph: typeof args.graph === "string" ? args.graph : undefined,
+        all_graphs,
+        max_graphs,
+        limit,
+        predicate: (n) => {
+          const cls = String(n?.class ?? "");
+          if (cls.includes("UK2Node_VariableSet")) return containsCI(n?.title, query);
+          return query.length > 0 && containsCI(String(n?.title ?? ""), query) && String(n?.title ?? "").toLowerCase().includes("set");
+        }
+      });
+      return asToolResult({ ok: true, ...res, query, all_graphs, note: "Heuristic match: VariableSet nodes and title substring." });
+    }
+
+    if (name === "unreal.find_blueprint_component_references") {
+      const query =
+        typeof args.component_name === "string" ? args.component_name : typeof args.query === "string" ? args.query : "";
+      const all_graphs = typeof args.all_graphs === "boolean" ? args.all_graphs : false;
+      const max_graphs = typeof args.max_graphs === "number" ? args.max_graphs : undefined;
+      const limit = typeof args.limit === "number" ? args.limit : undefined;
+      const res = await findAcrossGraphs({
+        graph: typeof args.graph === "string" ? args.graph : undefined,
+        all_graphs,
+        max_graphs,
+        limit,
+        include_pins: true,
+        predicate: (n) => {
+          if (query.length === 0) return false;
+          if (containsCI(n?.title, query) || containsCI(n?.node_comment, query) || containsCI(n?.comment, query)) return true;
+          const pins: any[] = Array.isArray(n?.pins) ? n.pins : [];
+          return pins.some((p) => containsCI(p?.default_value, query) || containsCI(p?.type, query) || containsCI(p?.name, query));
+        }
+      });
+      return asToolResult({ ok: true, ...res, query, all_graphs, note: "Heuristic match: title/comment/pin default/type/name substring." });
+    }
+
+    if (name === "unreal.find_blueprint_asset_references") {
+      const query =
+        typeof args.asset_query === "string" ? args.asset_query : typeof args.query === "string" ? args.query : "";
+      const all_graphs = typeof args.all_graphs === "boolean" ? args.all_graphs : false;
+      const max_graphs = typeof args.max_graphs === "number" ? args.max_graphs : undefined;
+      const limit = typeof args.limit === "number" ? args.limit : undefined;
+      const res = await findAcrossGraphs({
+        graph: typeof args.graph === "string" ? args.graph : undefined,
+        all_graphs,
+        max_graphs,
+        limit,
+        include_pins: true,
+        predicate: (n) => {
+          if (query.length === 0) return false;
+          if (containsCI(n?.title, query) || containsCI(n?.node_comment, query) || containsCI(n?.comment, query)) return true;
+          const pins: any[] = Array.isArray(n?.pins) ? n.pins : [];
+          return pins.some((p) => containsCI(p?.default_value, query));
+        }
+      });
+      return asToolResult({ ok: true, ...res, query, all_graphs, note: "Heuristic match: node title/comment and pin default_value substring." });
+    }
+
+    if (name === "unreal.find_blueprint_class_references") {
+      const query =
+        typeof args.class_query === "string" ? args.class_query : typeof args.query === "string" ? args.query : "";
+      const all_graphs = typeof args.all_graphs === "boolean" ? args.all_graphs : false;
+      const max_graphs = typeof args.max_graphs === "number" ? args.max_graphs : undefined;
+      const limit = typeof args.limit === "number" ? args.limit : undefined;
+      const res = await findAcrossGraphs({
+        graph: typeof args.graph === "string" ? args.graph : undefined,
+        all_graphs,
+        max_graphs,
+        limit,
+        include_pins: true,
+        predicate: (n) => {
+          if (query.length === 0) return false;
+          if (containsCI(n?.title, query) || containsCI(n?.class, query)) return true;
+          const pins: any[] = Array.isArray(n?.pins) ? n.pins : [];
+          return pins.some((p) => containsCI(p?.type, query) || containsCI(p?.default_value, query));
+        }
+      });
+      return asToolResult({ ok: true, ...res, query, all_graphs, note: "Heuristic match: title/class/pin type/default substring." });
+    }
+
+    if (name === "unreal.find_blueprint_unconnected_pins") {
+      const graph = typeof args.graph === "string" ? args.graph : undefined;
+      const exec_only = typeof args.exec_only === "boolean" ? args.exec_only : false;
+      const data_only = typeof args.data_only === "boolean" ? args.data_only : false;
+      const limit = clampInt(args.limit, 200, 0, 2000);
+
+      const exportRes = await fetchGraph(graph, {
+        mode: "full",
+        include_pins: true,
+        include_edges: true,
+        max_nodes: 2000,
+        max_edges: 20000
+      });
+      if (!exportRes) {
+        return asToolResult({ ok: true, returned: 0, pins: [], note: "Blueprint graph not available" });
+      }
+
+      const edges: any[] = Array.isArray(exportRes.edges) ? exportRes.edges : [];
+      const nodes: any[] = Array.isArray(exportRes.nodes) ? exportRes.nodes : [];
+      const out: any[] = [];
+
+      for (const n of nodes) {
+        if (out.length >= limit) break;
+        const nodeId = String(n?.id ?? "");
+        const pins: any[] = Array.isArray(n?.pins) ? n.pins : [];
+        for (const p of pins) {
+          if (out.length >= limit) break;
+          const isExec = Boolean(p?.is_exec);
+          if (exec_only && !isExec) continue;
+          if (data_only && isExec) continue;
+
+          const pinName = String(p?.name ?? "");
+          if (!pinName) continue;
+
+          const connected = edges.some(
+            (e) =>
+              (e?.from_node_id === nodeId && e?.from_pin === pinName) || (e?.to_node_id === nodeId && e?.to_pin === pinName)
+          );
+          if (connected) continue;
+
+          out.push({
+            graph: String(exportRes.graph_name ?? graph ?? ""),
+            node_id: nodeId,
+            node_title: String(n?.title ?? ""),
+            node_class: String(n?.class ?? ""),
+            pin: {
+              name: pinName,
+              direction: String(p?.direction ?? ""),
+              type: String(p?.type ?? ""),
+              is_exec: isExec,
+              default_value: String(p?.default_value ?? "")
+            }
+          });
+        }
+      }
+
+      return asToolResult({
+        ok: true,
+        graph_name: String(exportRes.graph_name ?? graph ?? ""),
+        returned: out.length,
+        pins: out,
+        exec_only,
+        data_only,
+        note: "Unconnected means no edges reference the pin (from_pin/to_pin)."
+      });
+    }
+
+    const execGraphDegrees = async (graph: string | undefined) => {
+      const exportRes = await fetchGraph(graph, {
+        mode: "execution_only",
+        include_edges: true,
+        include_pins: false,
+        max_nodes: 2000,
+        max_edges: 20000
+      });
+      if (!exportRes) return null;
+      const nodes: any[] = Array.isArray(exportRes.nodes) ? exportRes.nodes : [];
+      const edges: any[] = Array.isArray(exportRes.edges) ? exportRes.edges : [];
+      const indeg = new Map<string, number>();
+      const outdeg = new Map<string, number>();
+      for (const n of nodes) {
+        const id = String(n?.id ?? "");
+        if (!id) continue;
+        indeg.set(id, 0);
+        outdeg.set(id, 0);
+      }
+      for (const e of edges) {
+        const f = String(e?.from_node_id ?? "");
+        const t = String(e?.to_node_id ?? "");
+        if (f && outdeg.has(f)) outdeg.set(f, (outdeg.get(f) ?? 0) + 1);
+        if (t && indeg.has(t)) indeg.set(t, (indeg.get(t) ?? 0) + 1);
+      }
+      return { exportRes, nodes, edges, indeg, outdeg };
+    };
+
+    if (name === "unreal.find_blueprint_dead_ends") {
+      const graph = typeof args.graph === "string" ? args.graph : undefined;
+      const limit = clampInt(args.limit, 50, 0, 500);
+      const r = await execGraphDegrees(graph);
+      if (!r) return asToolResult({ ok: true, returned: 0, nodes: [], note: "Blueprint graph not available" });
+
+      const leaves = r.nodes
+        .filter((n) => (r.outdeg.get(String(n?.id ?? "")) ?? 0) === 0)
+        .slice(0, limit)
+        .map((n) => ({
+          ...summarizeNode(n, String(r.exportRes.graph_name ?? graph ?? "")),
+          indegree: r.indeg.get(String(n?.id ?? "")) ?? 0,
+          outdegree: 0
+        }));
+
+      return asToolResult({
+        ok: true,
+        graph_name: String(r.exportRes.graph_name ?? graph ?? ""),
+        returned: leaves.length,
+        nodes: leaves,
+        note: "Heuristic: nodes with outdegree=0 in execution_only graph. This does not prove reachability from entry points."
+      });
+    }
+
+    if (name === "unreal.find_blueprint_entry_points") {
+      const graph = typeof args.graph === "string" ? args.graph : undefined;
+      const limit = clampInt(args.limit, 50, 0, 500);
+      const r = await execGraphDegrees(graph);
+      if (!r) return asToolResult({ ok: true, returned: 0, nodes: [], note: "Blueprint graph not available" });
+
+      const entries = r.nodes
+        .filter((n) => (r.indeg.get(String(n?.id ?? "")) ?? 0) === 0)
+        .slice(0, limit)
+        .map((n) => ({
+          ...summarizeNode(n, String(r.exportRes.graph_name ?? graph ?? "")),
+          indegree: 0,
+          outdegree: r.outdeg.get(String(n?.id ?? "")) ?? 0
+        }));
+
+      return asToolResult({
+        ok: true,
+        graph_name: String(r.exportRes.graph_name ?? graph ?? ""),
+        returned: entries.length,
+        nodes: entries,
+        note: "Heuristic: nodes with indegree=0 in execution_only graph." 
+      });
+    }
+
+    if (name === "unreal.find_blueprint_implementations") {
+      return asToolResult({ ok: true, implementations: [], note: "Not implemented yet" });
+    }
+
+    const buildGraphIndex = (exportRes: any) => {
+      const nodes: any[] = Array.isArray(exportRes?.nodes) ? exportRes.nodes : [];
+      const edges: any[] = Array.isArray(exportRes?.edges) ? exportRes.edges : [];
+      const byId = new Map<string, any>();
+      for (const n of nodes) {
+        const id = String(n?.id ?? "");
+        if (!id) continue;
+        byId.set(id, n);
+      }
+      const next = new Map<string, string[]>();
+      const prev = new Map<string, string[]>();
+      for (const id of byId.keys()) {
+        next.set(id, []);
+        prev.set(id, []);
+      }
+      for (const e of edges) {
+        const f = String(e?.from_node_id ?? "");
+        const t = String(e?.to_node_id ?? "");
+        if (!f || !t) continue;
+        if (!byId.has(f) || !byId.has(t)) continue;
+        next.get(f)!.push(t);
+        prev.get(t)!.push(f);
+      }
+      return { byId, edges, next, prev };
+    };
+
+    const bfsPath = (next: Map<string, string[]>, start: string, goal: string, maxSteps: number) => {
+      if (start === goal) return [start];
+      const q: string[] = [start];
+      const parent = new Map<string, string | null>();
+      parent.set(start, null);
+      let steps = 0;
+      while (q.length > 0 && steps < 200000) {
+        const cur = q.shift()!;
+        const neigh = next.get(cur) ?? [];
+        for (const n of neigh) {
+          if (parent.has(n)) continue;
+          parent.set(n, cur);
+          if (n === goal) {
+            const path: string[] = [];
+            let x: string | null = goal;
+            while (x) {
+              path.push(x);
+              x = parent.get(x) ?? null;
+            }
+            path.reverse();
+            if (path.length - 1 > maxSteps) return null;
+            return path;
+          }
+          q.push(n);
+        }
+        steps += 1;
+      }
+      return null;
+    };
+
+    if (name === "unreal.trace_blueprint_path") {
+      const graph = typeof args.graph === "string" ? args.graph : undefined;
+      const from_node_id = typeof args.from_node_id === "string" ? args.from_node_id : "";
+      const to_node_id = typeof args.to_node_id === "string" ? args.to_node_id : "";
+      const max_steps = clampInt(args.max_steps, 32, 0, 256);
+      if (!from_node_id || !to_node_id) {
+        return asToolResult({ ok: true, path: [], note: "from_node_id and to_node_id are required" });
+      }
+      const exportRes = await fetchGraph(graph, {
+        mode: "full",
+        include_edges: true,
+        include_pins: false,
+        max_nodes: 2000,
+        max_edges: 20000
+      });
+      if (!exportRes) return asToolResult({ ok: true, path: [], note: "Blueprint graph not available" });
+
+      const idx = buildGraphIndex(exportRes);
+      if (!idx.byId.has(from_node_id) || !idx.byId.has(to_node_id)) {
+        return asToolResult({ ok: true, path: [], note: "from_node_id/to_node_id not found in exported graph (increase bounds or check graph)" });
+      }
+      const pathIds = bfsPath(idx.next, from_node_id, to_node_id, max_steps);
+      if (!pathIds) {
+        return asToolResult({ ok: true, path: [], note: "No path found (or exceeded max_steps)" });
+      }
+      const graph_name = String(exportRes.graph_name ?? graph ?? "");
+      const nodes = pathIds.map((id) => summarizeNode(idx.byId.get(id), graph_name));
+      return asToolResult({ ok: true, graph_name, from_node_id, to_node_id, steps: pathIds.length - 1, path: nodes });
+    }
+
+    const bfsSubgraph = (start: string, next: Map<string, string[]>, maxDepth: number, maxNodes: number) => {
+      const seen = new Set<string>();
+      const depth = new Map<string, number>();
+      const q: string[] = [];
+      seen.add(start);
+      depth.set(start, 0);
+      q.push(start);
+      while (q.length > 0 && seen.size < maxNodes) {
+        const cur = q.shift()!;
+        const d = depth.get(cur) ?? 0;
+        if (d >= maxDepth) continue;
+        for (const n of next.get(cur) ?? []) {
+          if (seen.has(n)) continue;
+          seen.add(n);
+          depth.set(n, d + 1);
+          if (seen.size >= maxNodes) break;
+          q.push(n);
+        }
+      }
+      return seen;
+    };
+
+    const upstreamDownstreamCommon = async (direction: "up" | "down" | "both") => {
+      const graph = typeof args.graph === "string" ? args.graph : undefined;
+      const node_id = typeof args.node_id === "string" ? args.node_id : "";
+      const max_depth = clampInt(args.max_depth, direction === "both" ? 1 : 3, 0, 20);
+      const max_nodes = clampInt(args.max_nodes, 200, 1, 2000);
+      if (!node_id) {
+        return asToolResult({ ok: true, nodes: [], edges: [], note: "node_id is required" });
+      }
+      const exportRes = await fetchGraph(graph, {
+        mode: "full",
+        include_edges: true,
+        include_pins: false,
+        max_nodes: 2000,
+        max_edges: 20000
+      });
+      if (!exportRes) return asToolResult({ ok: true, nodes: [], edges: [], note: "Blueprint graph not available" });
+
+      const idx = buildGraphIndex(exportRes);
+      if (!idx.byId.has(node_id)) {
+        return asToolResult({ ok: true, nodes: [], edges: [], note: "node_id not found in exported graph (increase bounds or check graph)" });
+      }
+
+      const graph_name = String(exportRes.graph_name ?? graph ?? "");
+      const picked = new Set<string>();
+      if (direction === "up" || direction === "both") {
+        for (const id of bfsSubgraph(node_id, idx.prev, max_depth, max_nodes)) picked.add(id);
+      }
+      if (direction === "down" || direction === "both") {
+        for (const id of bfsSubgraph(node_id, idx.next, max_depth, max_nodes)) picked.add(id);
+      }
+
+      const nodes = [...picked].map((id) => summarizeNode(idx.byId.get(id), graph_name));
+      const edges = idx.edges
+        .filter((e) => picked.has(String(e?.from_node_id ?? "")) && picked.has(String(e?.to_node_id ?? "")))
+        .slice(0, 5000);
+
+      return asToolResult({ ok: true, graph_name, node_id, returned_nodes: nodes.length, returned_edges: edges.length, nodes, edges });
+    };
+
+    if (name === "unreal.get_upstream_nodes") {
+      return await upstreamDownstreamCommon("up");
+    }
+
+    if (name === "unreal.get_downstream_nodes") {
+      return await upstreamDownstreamCommon("down");
+    }
+
+    if (name === "unreal.get_node_neighbourhood") {
+      return await upstreamDownstreamCommon("both");
+    }
+
+    if (name === "unreal.focus_blueprint_node") {
+      return asToolResult({ ok: true, supported: false, note: "Not implemented yet (requires Blueprint editor UI integration)." });
+    }
+
+    if (name === "unreal.open_blueprint_graph") {
+      return asToolResult({ ok: true, supported: false, note: "Not implemented yet (requires Blueprint editor UI integration)." });
+    }
+
+    if (name === "unreal.select_blueprint_nodes") {
+      return asToolResult({ ok: true, supported: false, note: "Not implemented yet (requires Blueprint editor UI integration)." });
     }
 
     return {
