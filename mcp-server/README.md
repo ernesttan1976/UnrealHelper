@@ -71,7 +71,7 @@ UNREAL_MOCK=1 node dist/index.js
 
 ## Run (real Unreal)
 
-1. Install/enable the plugin from `unreal-plugin/UnrealDebugCopilot` in your UE 5.6 project.
+1. Install/enable the plugin from `unreal-plugin/UnstuckForUnreal` in your UE 5.6 project.
 2. Restart the editor.
 3. Copy the token printed to the Output Log.
 4. Run:
@@ -83,7 +83,7 @@ UNREAL_HOST=127.0.0.1 UNREAL_PORT=17777 UNREAL_TOKEN=<token> node dist/index.js
 ### Option: auto-load token from project dir
 
 If you set `UNREAL_PROJECT_DIR` to your Unreal project directory, the server will try to read
-`[UnrealDebugCopilot] Token` (and `Port` if `UNREAL_PORT` is not explicitly set) from the project's
+`[UnstuckForUnreal] Token` (and `Port` if `UNREAL_PORT` is not explicitly set) from the project's
 `EditorPerProjectUserSettings.ini`.
 
 Example:

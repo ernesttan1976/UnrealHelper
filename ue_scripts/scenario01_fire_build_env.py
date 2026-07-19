@@ -1,7 +1,7 @@
 """Scenario01Fire: regenerate the environment blockout (UE 5.6 Editor Python).
 
 Source of truth:
-- D:/UnrealHelper/story/Scenario01Fire/scene_plan.md
+- story/Scenario01Fire/scene_plan.md
 
 Run in Unreal Editor:
 1. Open level: /Game/Scenario01Fire

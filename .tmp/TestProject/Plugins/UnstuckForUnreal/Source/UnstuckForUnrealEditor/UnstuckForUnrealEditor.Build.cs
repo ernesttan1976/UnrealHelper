@@ -1,8 +1,8 @@
 using UnrealBuildTool;
 
-public class UnrealDebugCopilotEditor : ModuleRules
+public class UnstuckForUnrealEditor : ModuleRules
 {
-  public UnrealDebugCopilotEditor(ReadOnlyTargetRules Target) : base(Target)
+  public UnstuckForUnrealEditor(ReadOnlyTargetRules Target) : base(Target)
   {
     PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 

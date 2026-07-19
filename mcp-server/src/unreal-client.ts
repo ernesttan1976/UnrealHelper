@@ -460,7 +460,7 @@ export class UnrealClient {
         request_id,
         ok: true,
         result: {
-          plugin_name: "UnrealDebugCopilot",
+          plugin_name: "UnstuckForUnreal",
           plugin_version: "0.0.1",
           protocol_version: 1
         }

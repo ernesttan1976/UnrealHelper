@@ -4,7 +4,7 @@
 
 class FCopilotTcpServer;
 
-class FUnrealDebugCopilotEditorModule : public IModuleInterface
+class FUnstuckForUnrealEditorModule : public IModuleInterface
 {
 public:
   virtual void StartupModule() override;

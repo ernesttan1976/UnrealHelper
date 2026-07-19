@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Sync UnrealDebugCopilot into a UE project and build the Editor target.
+  Sync UnstuckForUnreal into a UE project and build the Editor target.
 
 .DESCRIPTION
   Does the equivalent of steps 2.2 (copy plugin into <Project>/Plugins) and 2.3 (build)
@@ -133,7 +133,7 @@ Write-Host "Project: $uprojectPath"
 Write-Host "Engine:  $engineRootResolved"
 Write-Host "Target:  ${projectName}Editor $Platform $Configuration"
 
-# Step 2.2: copy plugin into <Project>/Plugins/UnrealDebugCopilot
+# Step 2.2: copy plugin into <Project>/Plugins/UnstuckForUnreal
 & (Join-Path $repoRoot "scripts/install-plugin.ps1") (Split-Path -Parent $uprojectPath)
 
 # Step 2.3: build the Editor target so the plugin compiles

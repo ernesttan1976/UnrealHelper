@@ -1777,7 +1777,7 @@ export const TOOL_DEFS = [
   },
   {
     "name": "unreal.get_plugin_version",
-    "description": "Get UnrealDebugCopilot plugin version (and bridge protocol version).",
+    "description": "Get UnstuckForUnreal plugin version (and bridge protocol version).",
     "inputSchema": {
       "type": "object",
       "properties": {},

@@ -80,7 +80,7 @@
     },
     {
       "name": "unreal.get_plugin_version",
-      "description": "Get UnrealDebugCopilot plugin version (and bridge protocol version).",
+      "description": "Get UnstuckForUnreal plugin version (and bridge protocol version).",
       "domain": "core",
       "priority": 0,
       "access": "read",

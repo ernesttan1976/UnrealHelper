@@ -384,7 +384,7 @@ public:
       return 0;
     }
 
-    Listener = SocketSubsystem->CreateSocket(NAME_Stream, TEXT("UnrealDebugCopilotListener"), false);
+    Listener = SocketSubsystem->CreateSocket(NAME_Stream, TEXT("UnstuckForUnrealListener"), false);
     if (!Listener)
     {
       return 0;
@@ -404,14 +404,14 @@ public:
 
     if (!Listener->Bind(*InternetAddr) || !Listener->Listen(16))
     {
-      UE_LOG(LogTemp, Error, TEXT("[UnrealDebugCopilot] Failed to bind/listen on 127.0.0.1:%d"), Port);
+      UE_LOG(LogTemp, Error, TEXT("[UnstuckForUnreal] Failed to bind/listen on 127.0.0.1:%d"), Port);
       SocketSubsystem->DestroySocket(Listener);
       Listener = nullptr;
       return 0;
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[UnrealDebugCopilot] Listening on 127.0.0.1:%d"), Port);
-    UE_LOG(LogTemp, Display, TEXT("[UnrealDebugCopilot] Token (set UNREAL_TOKEN for the mcp-server): %s"), *Token);
+    UE_LOG(LogTemp, Display, TEXT("[UnstuckForUnreal] Listening on 127.0.0.1:%d"), Port);
+    UE_LOG(LogTemp, Display, TEXT("[UnstuckForUnreal] Token (set UNREAL_TOKEN for the mcp-server): %s"), *Token);
 
     while (!bStopRequested)
     {
@@ -419,7 +419,7 @@ public:
       if (Listener->HasPendingConnection(bHasPending) && bHasPending)
       {
         TSharedRef<FInternetAddr> ClientAddr = SocketSubsystem->CreateInternetAddr();
-        FSocket* Client = Listener->Accept(*ClientAddr, TEXT("UnrealDebugCopilotClient"));
+        FSocket* Client = Listener->Accept(*ClientAddr, TEXT("UnstuckForUnrealClient"));
         if (Client)
         {
           Client->SetNonBlocking(false);
@@ -643,7 +643,7 @@ void FCopilotTcpServer::Start()
   }
 
   Runnable = new FServerRunnable(Token, Port);
-  Thread = FRunnableThread::Create(Runnable, TEXT("UnrealDebugCopilotServer"));
+  Thread = FRunnableThread::Create(Runnable, TEXT("UnstuckForUnrealServer"));
 }
 
 void FCopilotTcpServer::Stop()

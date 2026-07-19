@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 
 if (-not $PluginSource) {
   $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-  $PluginSource = Join-Path $scriptDir "..\unreal-plugin\UnrealDebugCopilot"
+  $PluginSource = Join-Path $scriptDir "..\unreal-plugin\UnstuckForUnreal"
 }
 
 if (-not (Test-Path -LiteralPath $ProjectDir)) {
@@ -44,7 +44,7 @@ if ($projectPathResolved.ToLowerInvariant().EndsWith(".uproject")) {
 }
 
 $pluginsDir = Join-Path $projectDirFull "Plugins"
-$destPluginDir = Join-Path $pluginsDir "UnrealDebugCopilot"
+$destPluginDir = Join-Path $pluginsDir "UnstuckForUnreal"
 
 New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
 
@@ -54,5 +54,5 @@ if ($Clean -and (Test-Path -LiteralPath $destPluginDir)) {
 
 Copy-Item -LiteralPath $pluginSourceFull -Destination $pluginsDir -Recurse -Force
 
-Write-Host "Installed UnrealDebugCopilot plugin to: $destPluginDir"
+Write-Host "Installed UnstuckForUnreal plugin to: $destPluginDir"
 Write-Host "Next: enable plugin in UE (Edit -> Plugins), restart editor, then run mcp-server/probe with UNREAL_PROJECT_DIR."

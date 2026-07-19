@@ -1,6 +1,6 @@
-# UnrealDebugCopilot Agent
+# UnstuckForUnreal Agent
 
-This repo is **UnrealDebugCopilot (Unreal Editor plugin)** plus an **MCP server** that exposes Unreal debugging/inspection tools to OpenCode.
+This repo is **UnstuckForUnreal (Unreal Editor plugin)** plus an **MCP server** that exposes Unreal debugging/inspection tools to OpenCode.
 
 ## What I Can Do
 
@@ -49,7 +49,7 @@ When the user says “I’m stuck” or “it doesn’t work”
 
 1. Switch to troubleshooting mode (below).
 
-## Troubleshooting Mode (Use UnrealDebugCopilot)
+## Troubleshooting Mode (Use UnstuckForUnreal)
 
 Goal: diagnose based on evidence from the user’s project and editor state, not guesses.
 
@@ -84,7 +84,7 @@ If the user’s question cannot be answered with current repo knowledge and curr
 1. State what specific missing capability blocks the answer (example: “need active Blueprint graph nodes”, “need compile diagnostics”, “need PIE state”, “need recent logs”).
 1. Propose the smallest concrete change to enable it.
 1. Implement the change in one of:
-1. `unreal-plugin/UnrealDebugCopilot` (add/extend JSON-RPC methods in the Unreal plugin)
+1. `unreal-plugin/UnstuckForUnreal` (add/extend JSON-RPC methods in the Unreal plugin)
 1. `mcp-server/src` (add/extend MCP tools and schemas; ensure it compiles)
 1. `.opencode/skills/unreal-mcp/SKILL.md` (document the new workflow/tool usage)
 1. Rebuild and re-test end-to-end.
@@ -113,7 +113,7 @@ The Unreal project directory is already defined in repo root `.env` as `UNREAL_P
 Treat read/write access within `UNREAL_PROJECT_DIR` as pre-approved for:
 
 1. Reading project config needed for connectivity (for example `EditorPerProjectUserSettings.ini`).
-1. Installing/syncing the plugin under `<Project>/Plugins/UnrealDebugCopilot`.
+1. Installing/syncing the plugin under `<Project>/Plugins/UnstuckForUnreal`.
 1. Running build/test scripts that operate on that project.
 
 Do not repeatedly ask for permission to read/write under `UNREAL_PROJECT_DIR`. Proceed and only ask if an operation would touch paths outside the repo or outside `UNREAL_PROJECT_DIR`.

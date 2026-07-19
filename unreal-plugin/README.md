@@ -1,10 +1,10 @@
 # Unreal Plugin
 
-Plugin path: `unreal-plugin/UnrealDebugCopilot`
+Plugin path: `unreal-plugin/UnstuckForUnreal`
 
 ## Install (UE 5.6)
 
-1. Copy `unreal-plugin/UnrealDebugCopilot` into your Unreal project at `Plugins/UnrealDebugCopilot`.
+1. Copy `unreal-plugin/UnstuckForUnreal` into your Unreal project at `Plugins/UnstuckForUnreal`.
    (Optional: `powershell -ExecutionPolicy Bypass -File scripts/install-plugin.ps1 -ProjectDir <path-to-your-project>`)
 2. Enable it in the editor (Edit → Plugins).
 3. Restart the editor.

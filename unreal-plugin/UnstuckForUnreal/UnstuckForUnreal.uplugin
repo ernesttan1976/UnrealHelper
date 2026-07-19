@@ -2,16 +2,16 @@
   "FileVersion": 3,
   "Version": 1,
   "VersionName": "0.0.1",
-  "FriendlyName": "Unreal Debug Copilot",
+  "FriendlyName": "Unstuck for Unreal",
   "Description": "Local-only debugging copilot endpoint for Unreal Editor.",
   "Category": "Debugging",
-  "CreatedBy": "UnrealHelper",
+  "CreatedBy": "Unstuck for Unreal",
   "CanContainContent": false,
   "IsBetaVersion": true,
   "Installed": false,
   "Modules": [
     {
-      "Name": "UnrealDebugCopilotEditor",
+      "Name": "UnstuckForUnrealEditor",
       "Type": "Editor",
       "LoadingPhase": "PostEngineInit"
     }

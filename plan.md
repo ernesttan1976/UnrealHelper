@@ -1,4 +1,4 @@
-# Unreal Debugging Copilot — Build Plan
+# Unstuck for Unreal — Build Plan
 
 ## 0. Current Status (2026-07-17)
 
@@ -7,7 +7,7 @@ Completed (repo-side):
 * `mcp-server/` typechecks and builds.
 * `mcp-server/` probe runs in mock mode (`UNREAL_MOCK=1`) and returns structured JSON for:
   * `ping`, `get_editor_status`, `get_engine_version`, `get_current_project`, `get_selected_actors`, `get_open_editors`, `get_active_blueprint`, `get_component_tree`.
-* `unreal-plugin/UnrealDebugCopilot` exists as an Editor plugin stub exposing a localhost-only, line-delimited JSON request/response server (port `17777`) with a per-project token.
+* `unreal-plugin/UnstuckForUnreal` exists as an Editor plugin stub exposing a localhost-only, line-delimited JSON request/response server (port `17777`) with a per-project token.
 
 Not yet verified (UE-side):
 
@@ -920,8 +920,8 @@ This MVP can already answer:
 ```text
 unreal-debug-copilot/
 ├── unreal-plugin/
-│   └── UnrealDebugCopilot/
-│       ├── UnrealDebugCopilot.uplugin
+│   └── UnstuckForUnreal/
+│       ├── UnstuckForUnreal.uplugin
 │       ├── Source/
 │       │   ├── UnrealDebugRuntime/
 │       │   │   ├── Public/

@@ -97,7 +97,7 @@ export function resolveUnrealConfigFromProject(args: ResolveArgs): Resolved {
     return { token, port };
   }
 
-  const values = parseIniSectionValues(iniText, "UnrealDebugCopilot");
+  const values = parseIniSectionValues(iniText, "UnstuckForUnreal");
 
   if (!token && values.Token) {
     token = values.Token;
