@@ -1,5 +1,13 @@
 # UnrealHelper
 
+Frustration is the mother of invention.
+
+I was damn frustrated when I couldn’t follow an Unreal Blueprint scripting lesson. There’s no good way to debug. I kept tripping over small things, getting stuck, and having no clear way to inspect what the engine thought was happening. So I asked: what AI agent tool could I use? The ones I found were $200+. Free tools were… questionable. So I decided to make my own.
+
+Unreal’s Blueprint system is powerful and ridiculously feature-rich, but it’s also easy to get lost in. That’s why I vibecoded **Unreal Debugger Copilot**: an MCP plugin focused on debugging first. It’s a C++ Unreal Editor plugin you install into your project, plus a bridge that lets AI agents talk to Unreal via the Model Context Protocol (MCP), with packaged agent skills. The goal is simple: inspect internal state, figure out what’s wrong, and get unstuck.
+
+It’s still pretty “dumb” at generating content, but for debugging it’s already helped me finish tutorials I would’ve otherwise abandoned. Try it out and see what Unreal Debugger Copilot can do for you.
+
 Local Unreal Engine (UE 5.6) debugging copilot components.
 
 This repo contains:
