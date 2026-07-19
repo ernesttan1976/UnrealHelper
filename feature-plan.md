@@ -1,10 +1,68 @@
-# Comprehensive Unreal MCP Tool Catalogue
+# Unreal MCP Feature Plan (Policy-First)
 
-This is a **proposed MCP tool surface** for an Unreal debugging copilot. These are not all pre-existing Unreal functions with identical names; each MCP tool would wrap one or more Unreal Editor, Blueprint, reflection, PIE, logging or runtime APIs.
+This document is a **feature backlog** organized by priority, but it is not the tool surface of record.
 
-Unreal exposes Blueprint assets, graph structures, editor scripting, compilation utilities and runtime reflection, although some Blueprint/editor APIs remain incomplete or sparsely documented. MCP itself allows each operation to be presented as a separately named tool with a structured input schema. ([Epic Games Developers][1])
+Source of truth:
+
+* Tools: `MCP/tools/registry.json` (generated tool defs; no hand-maintained lists)
+* Policies: `MCP/packs/*.json` + server pack policy (`mcp-server/src/core/pack-policy.ts`)
+* Default exposure: `MCP/packs/default.json`
+* Workflows: `.opencode/skills/*` (must enforce safe ordering and refusal rules)
+
+Naming:
+
+* In the codebase, canonical tool names are `unreal.<tool>` (e.g. `unreal.get_editor_status`).
+* In the tables below, the `unreal.` prefix is omitted for readability unless otherwise noted.
+
+Guiding rule (from `scalable_unreal_mcp_plan.md`): treat Priorities **0-4** as the first stable product slice. Priority **5+** tools remain proposed and must be parked behind **non-default packs** (and often additional gates) so the default MCP surface stays conservative.
+
+---
+
+# Policies and packs
+
+The pack system is the primary policy mechanism. A tool must belong to an enabled pack to be listed or called.
+
+Current packs (v0.1):
+
+| Pack | Access | Default | Notes |
+| --- | --- | --- | --- |
+| `unreal.core` | read | enabled | connectivity, protocol, session health |
+| `unreal.editor.read` | read | enabled | editor context, selection, assets list, bounded object inspection |
+| `unreal.blueprint.read` | read | enabled | blueprint inspection + bounded graph queries |
+| `unreal.diagnostics` | mixed | enabled | diagnostics, validation, compile message capture |
+| `unreal.blueprint.write` | write | disabled | compile/refresh/reconstruct style primitives |
+| `unreal.editor.write` | write | disabled | transactions, save gating, editor mutations |
+
+Write gate:
+
+* Any tool with `access=write` requires `UNREAL_MCP_WRITE_ENABLED=1` in addition to its pack being enabled.
+
+Planned additional policy buckets (Priority 5+), to keep sensitive/heavy/stateful features off by default:
+
+| Bucket | Proposed pack name(s) | Why separate policy? |
+| --- | --- | --- |
+| Blueprint lint | `unreal.blueprint.lint.read` | deterministic checks; may be expensive; should be opt-in |
+| PIE control | `unreal.pie.write` | changes runtime/editor state; safer behind explicit enable |
+| Logs | `unreal.logs.read` | privacy + volume controls; opt-in by default |
+| Runtime inspection | `unreal.runtime.read` | requires live world/PIE; potentially noisy |
+| Reflection/deep properties | `unreal.reflect.read` | high cardinality/size; needs strict bounds |
+| Tracing/events | `unreal.trace.write` | starts/stops capture; stateful; storage/PII concerns |
+| Watches/samplers | `unreal.watch.write` | background sampling; resource impact |
+| Capture (screenshots) | `unreal.capture.read` | privacy sensitive; large payloads |
+| Profiling | `unreal.profiling.read` | heavy operations; can stall editor |
+| Automation tests | `unreal.automation.write` | executes tests; changes runtime state |
+| Workflow orchestration | `unreal.workflows.mixed` | high-level composite tools; must be tightly curated |
+| Asset edits | `unreal.assets.write` | destructive potential; require extra approvals |
+| Blueprint edits | `unreal.blueprint.edit.write` | asset mutation; requires transactions + rollback |
+| Editor automation | `unreal.editor.automation.write` | destructive/large-scope editor actions |
 
 # Priority 0 — Connection and session health
+
+Policy:
+
+* Pack: `unreal.core` (default enabled)
+* Access: read
+* Requires `UNREAL_MCP_WRITE_ENABLED`: no
 
 Build these first. Without them, the agent cannot know whether its other observations are valid.
 
@@ -29,6 +87,13 @@ A debug session should assign a stable ID and sequence number to every captured 
 ---
 
 # Priority 1 — Current editor context
+
+Policy:
+
+* Pack: `unreal.editor.read` (default enabled)
+* Access: read
+* Requires editor: yes
+* Requires `UNREAL_MCP_WRITE_ENABLED`: no
 
 These give the agent the answer to:
 
@@ -73,6 +138,13 @@ get_dirty_assets
 ---
 
 # Priority 2 — Blueprint summary and static inspection
+
+Policy:
+
+* Pack: `unreal.blueprint.read` (default enabled)
+* Access: read
+* Requires editor: yes
+* Requires `UNREAL_MCP_WRITE_ENABLED`: no
 
 This is the core of a Blueprint debugging copilot.
 
@@ -144,6 +216,13 @@ Do not send the full graph by default. Large Blueprints can overwhelm the agent 
 
 # Priority 3 — Blueprint search and navigation
 
+Policy:
+
+* Pack: `unreal.blueprint.read` (default enabled) for pure search/query tools
+* Pack: `unreal.blueprint.write` (default disabled) for editor-navigation/mutation helpers (e.g. selecting nodes)
+* Access: read for search, write for selection/navigation helpers
+* Requires `UNREAL_MCP_WRITE_ENABLED`: only for write helpers
+
 Inspection is ineffective if the agent cannot locate relevant nodes.
 
 | MCP tool                              | Purpose                                       |
@@ -183,6 +262,13 @@ This is much better than making the agent inspect every node manually.
 ---
 
 # Priority 4 — Compilation and diagnostics
+
+Policy:
+
+* Pack: `unreal.diagnostics` (default enabled) for diagnostics/validation reads
+* Pack: `unreal.blueprint.write` (default disabled) for compile/refresh/reconstruct primitives
+* Access: mixed (reads are default; writes require explicit enable)
+* Requires `UNREAL_MCP_WRITE_ENABLED`: yes for compile/write primitives
 
 | MCP tool                          | Purpose                                            |
 | --------------------------------- | -------------------------------------------------- |
@@ -231,6 +317,12 @@ Unreal exposes Blueprint compilation infrastructure and editor utilities, but im
 
 # Priority 5 — Deterministic Blueprint linting
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.blueprint.lint.read` (proposed; default disabled)
+* Access: read
+* Requires `UNREAL_MCP_WRITE_ENABLED`: no
+
 These tools do not merely retrieve data. They perform known checks before the LLM reasons about the result.
 
 | MCP tool                                 | Purpose                                      |
@@ -267,6 +359,12 @@ These checks are particularly important because they ground the agent in determi
 ---
 
 # Priority 6 — PIE and simulation control
+
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.pie.write` (proposed; default disabled)
+* Access: write (state-changing)
+* Requires `UNREAL_MCP_WRITE_ENABLED`: yes
 
 | MCP tool                   | Purpose                                        |
 | -------------------------- | ---------------------------------------------- |
@@ -310,6 +408,12 @@ get_pie_players
 
 # Priority 7 — Logs and Unreal messages
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.logs.read` (proposed; default disabled)
+* Access: read
+* Notes: privacy and volume bounded; require strict filters/limits
+
 | MCP tool                       | Purpose                              |
 | ------------------------------ | ------------------------------------ |
 | `get_recent_logs`              | Retrieve filtered recent output      |
@@ -339,6 +443,12 @@ Do not return unrestricted log history. Support category, severity, time window,
 ---
 
 # Priority 8 — Runtime actor inspection
+
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.runtime.read` (proposed; default disabled)
+* Access: read
+* Notes: typically requires PIE or an editor world; must be bounded
 
 | MCP tool                      | Purpose                                      |
 | ----------------------------- | -------------------------------------------- |
@@ -373,6 +483,12 @@ Do not return unrestricted log history. Support category, severity, time window,
 ---
 
 # Priority 9 — Runtime component inspection
+
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.runtime.read` (proposed; default disabled)
+* Access: read
+* Notes: bounded output required
 
 | MCP tool                            | Purpose                                |
 | ----------------------------------- | -------------------------------------- |
@@ -411,6 +527,12 @@ compare_component_transforms
 ---
 
 # Priority 10 — Reflection and property inspection
+
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.reflect.read` (proposed; default disabled)
+* Access: read
+* Notes: strict depth/size bounds; avoid recursive dumps
 
 Unreal’s reflection system makes generic property inspection possible, but recursive object serialization must be tightly bounded to avoid huge or cyclic responses.
 
@@ -465,6 +587,12 @@ Postpone arbitrary nested struct and recursive object dumping.
 
 # Priority 11 — Runtime event tracing
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.trace.write` (proposed; default disabled)
+* Access: write (start/stop capture) + read (query)
+* Requires `UNREAL_MCP_WRITE_ENABLED`: yes
+
 This is the layer that tells the agent **what happened**, not merely what exists.
 
 | MCP tool                        | Purpose                                 |
@@ -509,6 +637,12 @@ This is more reliable than attempting full Blueprint VM execution tracing immedi
 
 # Priority 12 — Property and transform watches
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.watch.write` (proposed; default disabled)
+* Access: write (start/stop) + read (query)
+* Requires `UNREAL_MCP_WRITE_ENABLED`: yes
+
 | MCP tool                      | Purpose                                |
 | ----------------------------- | -------------------------------------- |
 | `start_property_watch`        | Sample a property over time            |
@@ -541,6 +675,12 @@ Bounded sample count
 ---
 
 # Priority 13 — Collision and overlap debugging
+
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.physics.debug.mixed` (proposed; default disabled)
+* Access: mixed
+* Notes: traces/draw-debug are stateful; keep strict bounds
 
 This deserves a dedicated interface because collision failures are extremely common in Unreal.
 
@@ -582,6 +722,12 @@ Therefore BeginOverlap cannot fire.
 
 # Priority 14 — Input debugging
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.input.debug.mixed` (proposed; default disabled)
+* Access: mixed
+* Notes: input simulation is stateful; keep behind explicit enable
+
 | MCP tool                           | Purpose                               |
 | ---------------------------------- | ------------------------------------- |
 | `get_input_system_type`            | Legacy or Enhanced Input              |
@@ -606,6 +752,11 @@ Therefore BeginOverlap cannot fire.
 
 # Priority 15 — Timelines, timers and latent actions
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.latent.debug.read` (proposed; default disabled)
+* Access: read
+
 | MCP tool                     | Purpose                                   |
 | ---------------------------- | ----------------------------------------- |
 | `get_runtime_timelines`      | Timeline instances on an actor            |
@@ -626,6 +777,11 @@ Therefore BeginOverlap cannot fire.
 ---
 
 # Priority 16 — AI, navigation and behaviour trees
+
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.ai.debug.read` (proposed; default disabled)
+* Access: read
 
 | MCP tool                         | Purpose                             |
 | -------------------------------- | ----------------------------------- |
@@ -652,6 +808,11 @@ Therefore BeginOverlap cannot fire.
 
 # Priority 17 — Animation inspection
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.animation.debug.read` (proposed; default disabled)
+* Access: read
+
 | MCP tool                                | Purpose                              |
 | --------------------------------------- | ------------------------------------ |
 | `get_skeletal_mesh_state`               | Mesh, skeleton and pose status       |
@@ -675,6 +836,11 @@ Therefore BeginOverlap cannot fire.
 
 # Priority 18 — Networking and replication
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.network.debug.read` (proposed; default disabled)
+* Access: read
+
 | MCP tool                         | Purpose                         |
 | -------------------------------- | ------------------------------- |
 | `get_network_mode`               | Standalone, server or client    |
@@ -697,6 +863,12 @@ Therefore BeginOverlap cannot fire.
 ---
 
 # Priority 19 — Assets and references
+
+Policy:
+
+* Pack: `unreal.editor.read` (default enabled) for Asset Registry listing (already part of v0.1)
+* Pack: `unreal.assets.read` (proposed; default disabled) for broader asset analysis
+* Pack: `unreal.assets.write` (proposed; default disabled) for destructive mutations
 
 Unreal’s editor libraries can load, inspect and manipulate assets; keep initial MCP tools read-only even when the underlying APIs support modifications. ([Epic Games Developers][4])
 
@@ -726,6 +898,11 @@ Unreal’s editor libraries can load, inspect and manipulate assets; keep initia
 
 # Priority 20 — Level and world inspection
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.world.read` (proposed; default disabled)
+* Access: read
+
 | MCP tool                      | Purpose                                 |
 | ----------------------------- | --------------------------------------- |
 | `get_world_summary`           | World type, actor counts and settings   |
@@ -751,6 +928,12 @@ Unreal’s editor libraries can load, inspect and manipulate assets; keep initia
 
 # Priority 21 — Rendering and visual capture
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.capture.read` (proposed; default disabled)
+* Access: read
+* Notes: privacy sensitive; payload sizes must be bounded
+
 | MCP tool                        | Purpose                           |
 | ------------------------------- | --------------------------------- |
 | `capture_editor_viewport`       | Screenshot active editor viewport |
@@ -775,6 +958,12 @@ Screenshots should supplement structured state, not replace it.
 ---
 
 # Priority 22 — Performance and profiling
+
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.profiling.read` (proposed; default disabled)
+* Access: read
+* Notes: potentially editor-stalling; require strict limits and cancellation
 
 | MCP tool                         | Purpose                            |
 | -------------------------------- | ---------------------------------- |
@@ -802,6 +991,12 @@ Screenshots should supplement structured state, not replace it.
 
 # Priority 23 — Automated test execution
 
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.automation.write` (proposed; default disabled)
+* Access: write (runs tests) + read (results)
+* Requires `UNREAL_MCP_WRITE_ENABLED`: yes
+
 | MCP tool                      | Purpose                            |
 | ----------------------------- | ---------------------------------- |
 | `list_automation_tests`       | Available Unreal automation tests  |
@@ -823,6 +1018,12 @@ Screenshots should supplement structured state, not replace it.
 ---
 
 # Priority 24 — Agent-level diagnostic workflows
+
+Policy (parked behind non-default pack):
+
+* Pack: `unreal.workflows.mixed` (proposed; default disabled)
+* Access: mixed
+* Notes: these are orchestrators over lower-level tools; should be curated and heavily tested
 
 These should be MCP tools even though they orchestrate several lower-level tools.
 
@@ -873,6 +1074,12 @@ It should internally perform:
 
 # Priority 25 — Safe control operations
 
+Policy:
+
+* Pack: `unreal.editor.write` (default disabled)
+* Access: write (state-changing, intended non-destructive)
+* Requires `UNREAL_MCP_WRITE_ENABLED`: yes
+
 These change transient editor or runtime state but usually do not modify assets.
 
 | MCP tool                       | Purpose                        |
@@ -903,6 +1110,14 @@ These should be marked as state-changing but non-destructive.
 ---
 
 # Priority 26 — Optional Blueprint editing
+
+Policy:
+
+* Pack: `unreal.blueprint.edit.write` (proposed; default disabled)
+* Requires pack: `unreal.editor.write` for transactions/rollback primitives
+* Access: write
+* Requires `UNREAL_MCP_WRITE_ENABLED`: yes
+* Notes: must be transaction-wrapped and rollback-safe; save must be explicit
 
 Build this only after inspection and diagnosis are reliable.
 
@@ -947,6 +1162,13 @@ Every editing workflow should:
 ---
 
 # Priority 27 — Advanced editor automation
+
+Policy:
+
+* Pack: `unreal.editor.automation.write` (proposed; default disabled)
+* Access: write
+* Requires `UNREAL_MCP_WRITE_ENABLED`: yes
+* Notes: destructive operations (delete/rename) should require additional per-tool approvals/feature flags
 
 Useful eventually, but not required for the debugging copilot.
 
@@ -1004,135 +1226,26 @@ with strict target restrictions.
 
 ---
 
-# Recommended implementation order
+# Implementation order (aligned to `scalable_unreal_mcp_plan.md`)
 
-## Release 0.1 — Basic observability
+## v0.1 hardening slice
 
-Build these **20 tools**:
+Priorities 0-4 are the product slice. Do not expand the surface until the foundation is stable.
 
-```text
-ping
-get_editor_status
-get_engine_version
-get_project_info
-start_debug_session
-end_debug_session
+Acceptance criteria:
 
-get_current_level
-get_selected_actors
-get_selected_assets
-get_active_blueprint
-get_active_blueprint_graph
-get_selected_blueprint_nodes
+* Tool registry (`MCP/tools/registry.json`) is the only source of tool metadata.
+* Pack policy is enforced for every tool call.
+* Default packs expose no write tools.
+* Skills exist and refuse unsafe operations: `unreal-project-inspection`, `blueprint-inspection`, `blueprint-edit-and-validate`.
+* Integration tests cover success and failure paths (policy denied, invalid input, editor not ready, compile failure).
+* Transaction + rollback primitives are verified for any write workflow.
+* Structured error envelope is consistent.
+* Local-only telemetry exists.
 
-get_blueprint_summary
-get_blueprint_graph
-get_blueprint_node
-find_blueprint_nodes
+## v0.2+ (feature expansion)
 
-compile_blueprint
-get_compile_messages
-
-get_pie_state
-get_recent_logs
-```
-
-## Release 0.2 — Useful Blueprint debugger
-
-Add:
-
-```text
-get_blueprint_component_tree
-get_blueprint_variables
-get_blueprint_functions
-get_blueprint_timelines
-get_blueprint_execution_flow
-get_node_neighbourhood
-
-lint_blueprint
-check_timeline_wiring
-check_world_relative_transform_usage
-check_component_mobility
-check_collision_event_prerequisites
-check_null_reference_risks
-
-start_pie
-stop_pie
-pause_pie
-resume_pie
-
-find_runtime_actors
-get_actor_state
-get_actor_component_tree
-get_component_state
-get_component_transform
-```
-
-## Release 0.3 — Runtime debugging
-
-Add:
-
-```text
-start_runtime_event_capture
-stop_runtime_event_capture
-get_runtime_events
-get_event_sequence
-
-record_debug_event
-record_debug_value
-record_debug_checkpoint
-
-start_property_watch
-get_property_samples
-stop_property_watch
-
-get_recent_overlap_events
-get_recent_hit_events
-get_recent_input_events
-get_timeline_state
-
-capture_pie_viewport
-capture_blueprint_graph
-```
-
-## Release 0.4 — Copilot workflows
-
-Add:
-
-```text
-diagnose_active_blueprint
-diagnose_compile_failure
-diagnose_event_not_firing
-diagnose_accessed_none
-diagnose_actor_not_moving
-diagnose_wrong_movement_direction
-diagnose_timeline_not_playing
-diagnose_overlap_not_firing
-diagnose_input_not_firing
-suggest_next_debug_test
-generate_debug_report
-verify_fix
-```
-
-## Release 0.5 — Safe control
-
-Add:
-
-```text
-focus_blueprint_node
-set_blueprint_debug_object
-add_blueprint_breakpoint
-remove_blueprint_breakpoint
-add_blueprint_watch
-remove_blueprint_watch
-single_step_pie
-simulate_input_action
-run_debug_scenario
-```
-
-## Release 1.0 — Optional edits
-
-Only then add constrained Blueprint modification and explicit saving.
+Only after v0.1 is hardened, add Priority 5+ tools by creating the appropriate non-default pack(s) first, then adding registry entries + skills/tests.
 
 ---
 
@@ -1199,8 +1312,8 @@ verify_fix
 
 That set is already capable of diagnosing a large proportion of beginner and intermediate Blueprint failures without attempting to become a full autonomous Unreal editor.
 
-[1]: https://dev.epicgames.com/documentation/unreal-engine/BlueprintAPI?utm_source=chatgpt.com "Unreal Engine Blueprint API Reference"
-[2]: https://dev.epicgames.com/documentation/unreal-engine/API/Editor/UnrealEd/FBlueprintEditorUtils?utm_source=chatgpt.com "FBlueprintEditorUtils | Unreal Engine 5.7 Documentation"
-[3]: https://dev.epicgames.com/documentation/en-us/unreal-engine/python-api/?application_version=5.6&utm_source=chatgpt.com "Unreal Python API Documentation"
-[4]: https://dev.epicgames.com/documentation/en-us/unreal-engine/python-api/class/EditorLevelLibrary?application_version=5.6&utm_source=chatgpt.com "unreal.EditorLevelLibrary — Unreal Python 5.6 (Experimental) ..."
-[5]: https://modelcontextprotocol.io/specification/2025-06-18/server/tools?utm_source=chatgpt.com "Tools"
+[1]: https://dev.epicgames.com/documentation/unreal-engine/BlueprintAPI "Unreal Engine Blueprint API Reference"
+[2]: https://dev.epicgames.com/documentation/unreal-engine/API/Editor/UnrealEd/FBlueprintEditorUtils "FBlueprintEditorUtils | Unreal Engine Documentation"
+[3]: https://dev.epicgames.com/documentation/en-us/unreal-engine/python-api/?application_version=5.6 "Unreal Python API Documentation"
+[4]: https://dev.epicgames.com/documentation/en-us/unreal-engine/python-api/class/EditorLevelLibrary?application_version=5.6 "unreal.EditorLevelLibrary — Unreal Python (Experimental)"
+[5]: https://modelcontextprotocol.io/specification/2025-06-18/server/tools "MCP Tools Specification"
