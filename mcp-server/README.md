@@ -32,6 +32,28 @@ Blueprint static inspection (Priority 2):
 * `unreal.get_blueprint_dependencies`
 * `unreal.get_blueprint_dependents`
 
+Compilation and diagnostics (Priority 4):
+
+* `unreal.compile_blueprint`
+* `unreal.compile_selected_blueprint`
+* `unreal.compile_blueprints`
+* `unreal.compile_all_dirty_blueprints`
+* `unreal.get_compile_messages`
+* `unreal.get_compile_message_details`
+* `unreal.get_compile_error_nodes`
+* `unreal.get_compile_warning_nodes`
+* `unreal.compile_and_capture_messages`
+* `unreal.get_generated_class_status`
+* `unreal.get_skeleton_class_status`
+* `unreal.get_blueprint_bytecode_summary`
+* `unreal.get_last_successful_compile`
+* `unreal.compare_compile_results`
+* `unreal.reinstance_blueprint`
+* `unreal.refresh_blueprint_nodes`
+* `unreal.reconstruct_blueprint_node`
+* `unreal.validate_blueprint_asset`
+* `unreal.validate_blueprint_dependencies`
+
 ## Build
 
 From `mcp-server/`:
@@ -90,7 +112,7 @@ UNREAL_HOST=127.0.0.1 UNREAL_PORT=17777 UNREAL_TOKEN=<token> node dist/probe.js
 ```
 cd mcp-server
 npm run build
-npm run test:priority -- --priority 3
+npm run test:priority -- --priority 4
 ```
 
 

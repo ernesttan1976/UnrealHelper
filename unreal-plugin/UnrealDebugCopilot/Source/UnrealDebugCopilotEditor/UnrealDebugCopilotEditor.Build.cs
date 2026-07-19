@@ -22,7 +22,12 @@ public class UnrealDebugCopilotEditor : ModuleRules
         "Sockets",
         "Networking",
         "Json",
-        "JsonUtilities"
+        "JsonUtilities",
+
+        // Blueprint compilation + diagnostics
+        "Kismet",
+        "KismetCompiler",
+        "BlueprintGraph"
       }
     );
   }

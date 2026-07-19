@@ -270,6 +270,141 @@ export class UnrealClient {
     return this.request("get_blueprint_dependents", params);
   }
 
+  // Priority 4 — Compilation and diagnostics
+  async compileBlueprint(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("compile_blueprint", params);
+  }
+
+  async compileSelectedBlueprint(): Promise<UnrealJsonRpcResponse> {
+    return this.request("compile_selected_blueprint");
+  }
+
+  async compileBlueprints(params?: { asset_paths?: string[] }): Promise<UnrealJsonRpcResponse> {
+    return this.request("compile_blueprints", params);
+  }
+
+  async compileAllDirtyBlueprints(): Promise<UnrealJsonRpcResponse> {
+    return this.request("compile_all_dirty_blueprints");
+  }
+
+  async getCompileMessages(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_compile_messages", params);
+  }
+
+  async getCompileMessageDetails(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+    message_id?: string;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_compile_message_details", params);
+  }
+
+  async getCompileErrorNodes(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_compile_error_nodes", params);
+  }
+
+  async getCompileWarningNodes(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_compile_warning_nodes", params);
+  }
+
+  async compileAndCaptureMessages(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("compile_and_capture_messages", params);
+  }
+
+  async getGeneratedClassStatus(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_generated_class_status", params);
+  }
+
+  async getSkeletonClassStatus(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_skeleton_class_status", params);
+  }
+
+  async getBlueprintBytecodeSummary(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_blueprint_bytecode_summary", params);
+  }
+
+  async getLastSuccessfulCompile(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("get_last_successful_compile", params);
+  }
+
+  async refreshBlueprintNodes(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("refresh_blueprint_nodes", params);
+  }
+
+  async reconstructBlueprintNode(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+    node_id?: string;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("reconstruct_blueprint_node", params);
+  }
+
+  async reinstanceBlueprint(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("reinstance_blueprint", params);
+  }
+
+  async validateBlueprintAsset(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("validate_blueprint_asset", params);
+  }
+
+  async validateBlueprintDependencies(params?: {
+    object_path?: string;
+    asset_path?: string;
+    use_active_if_missing?: boolean;
+  }): Promise<UnrealJsonRpcResponse> {
+    return this.request("validate_blueprint_dependencies", params);
+  }
+
   cancelCurrentOperation(params?: { request_id?: string }): {
     cancelled: string[];
   } {
@@ -366,7 +501,26 @@ export class UnrealClient {
             "inspect_blueprint",
             "get_blueprint_graph",
             "get_blueprint_dependencies",
-            "get_blueprint_dependents"
+            "get_blueprint_dependents",
+
+            "compile_blueprint",
+            "compile_selected_blueprint",
+            "compile_blueprints",
+            "compile_all_dirty_blueprints",
+            "get_compile_messages",
+            "get_compile_message_details",
+            "get_compile_error_nodes",
+            "get_compile_warning_nodes",
+            "compile_and_capture_messages",
+            "get_generated_class_status",
+            "get_skeleton_class_status",
+            "get_blueprint_bytecode_summary",
+            "get_last_successful_compile",
+            "refresh_blueprint_nodes",
+            "reconstruct_blueprint_node",
+            "reinstance_blueprint",
+            "validate_blueprint_asset",
+            "validate_blueprint_dependencies"
           ]
         }
       };
@@ -654,6 +808,54 @@ export class UnrealClient {
           dependents: [],
           returned: 0
         }
+      };
+    }
+
+    if (method === "compile_blueprint" || method === "compile_selected_blueprint" || method === "compile_and_capture_messages") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: {
+          operation: method,
+          compiled: false,
+          success: true,
+          errors: 0,
+          warnings: 0,
+          notes: 0,
+          messages: [],
+          note: "Mock: compilation not executed"
+        }
+      };
+    }
+    if (method === "compile_blueprints" || method === "compile_all_dirty_blueprints") {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { compiled: 0, errors: 0, warnings: 0, results: [], note: "Mock: no blueprints compiled" }
+      };
+    }
+    if (
+      method === "get_compile_messages" ||
+      method === "get_compile_message_details" ||
+      method === "get_compile_error_nodes" ||
+      method === "get_compile_warning_nodes" ||
+      method === "get_generated_class_status" ||
+      method === "get_skeleton_class_status" ||
+      method === "get_blueprint_bytecode_summary" ||
+      method === "get_last_successful_compile" ||
+      method === "refresh_blueprint_nodes" ||
+      method === "reconstruct_blueprint_node" ||
+      method === "reinstance_blueprint" ||
+      method === "validate_blueprint_asset" ||
+      method === "validate_blueprint_dependencies"
+    ) {
+      return {
+        protocol_version: 1,
+        request_id,
+        ok: true,
+        result: { note: `Mock: ${method} not executed` }
       };
     }
     return {

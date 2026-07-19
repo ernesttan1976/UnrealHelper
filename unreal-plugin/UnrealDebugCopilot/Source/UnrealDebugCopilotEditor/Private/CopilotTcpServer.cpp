@@ -46,13 +46,61 @@
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraphNode_Comment.h"
 
+// Blueprint compilation
+#include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "KismetCompiler/Public/CompilerResultsLog.h"
+
+// Diagnostic message tokens
+#include "Logging/TokenizedMessage.h"
+#include "Misc/MessageToken.h"
+#include "Misc/UObjectToken.h"
+
 #include <atomic>
 
 namespace
 {
   constexpr int32 kMaxLineBytes = 256 * 1024;
   constexpr float kAcceptSleepSeconds = 0.01f;
-  constexpr double kGameThreadWaitSeconds = 2.0;
+  constexpr double kDefaultGameThreadWaitSeconds = 2.0;
+  constexpr double kCompileGameThreadWaitSeconds = 30.0;
+
+  FCriticalSection GCompileMutex;
+
+  // Stores the last captured compile/diagnostic payloads so follow-up tools can query details.
+  // Keys are Blueprint object path (preferred) or asset/package path.
+  TMap<FString, TSharedPtr<FJsonObject>> GLastCompileByBlueprint;
+  TSharedPtr<FJsonObject> GLastCompileAny;
+  TMap<FString, TSharedPtr<FJsonObject>> GLastSuccessfulCompileByBlueprint;
+
+  FString SeverityToString(EMessageSeverity::Type Sev)
+  {
+    switch (Sev)
+    {
+      case EMessageSeverity::Error: return TEXT("error");
+      case EMessageSeverity::Warning: return TEXT("warning");
+      case EMessageSeverity::Info: return TEXT("info");
+      case EMessageSeverity::PerformanceWarning: return TEXT("warning");
+      default: return TEXT("note");
+    }
+  }
+
+  double GameThreadWaitSecondsForMethod(const FString& Method)
+  {
+    if (
+      Method.StartsWith(TEXT("compile_")) ||
+      Method.StartsWith(TEXT("get_compile_")) ||
+      Method.StartsWith(TEXT("validate_blueprint")) ||
+      Method == TEXT("refresh_blueprint_nodes") ||
+      Method == TEXT("reconstruct_blueprint_node") ||
+      Method == TEXT("reinstance_blueprint")
+    )
+    {
+      // Compilation and validation can easily exceed the default 2s.
+      return kCompileGameThreadWaitSeconds;
+    }
+    return kDefaultGameThreadWaitSeconds;
+  }
 
   FString GetShortAssetNameFromPackagePath(const FString& AssetPath)
   {
@@ -484,8 +532,28 @@ namespace
            TEXT("inspect_blueprint"),
            TEXT("get_blueprint_graph"),
            TEXT("get_blueprint_dependencies"),
-           TEXT("get_blueprint_dependents")
-         };
+           TEXT("get_blueprint_dependents"),
+
+           // Priority 4 — Compilation and diagnostics
+           TEXT("compile_blueprint"),
+           TEXT("compile_selected_blueprint"),
+           TEXT("compile_blueprints"),
+           TEXT("compile_all_dirty_blueprints"),
+           TEXT("get_compile_messages"),
+           TEXT("get_compile_message_details"),
+           TEXT("get_compile_error_nodes"),
+           TEXT("get_compile_warning_nodes"),
+           TEXT("compile_and_capture_messages"),
+           TEXT("get_generated_class_status"),
+           TEXT("get_skeleton_class_status"),
+           TEXT("get_blueprint_bytecode_summary"),
+           TEXT("get_last_successful_compile"),
+           TEXT("refresh_blueprint_nodes"),
+           TEXT("reconstruct_blueprint_node"),
+           TEXT("reinstance_blueprint"),
+           TEXT("validate_blueprint_asset"),
+           TEXT("validate_blueprint_dependencies")
+          };
 
         TArray<TSharedPtr<FJsonValue>> Supported;
         for (const TCHAR* M : Methods)
@@ -1330,6 +1398,515 @@ namespace
         }
       }
 
+      // Priority 4 — Compilation and diagnostics
+      else if (
+        Method == TEXT("compile_blueprint") || Method == TEXT("compile_selected_blueprint") || Method == TEXT("compile_blueprints") ||
+        Method == TEXT("compile_all_dirty_blueprints") || Method == TEXT("compile_and_capture_messages") ||
+        Method == TEXT("get_compile_messages") || Method == TEXT("get_compile_message_details") ||
+        Method == TEXT("get_compile_error_nodes") || Method == TEXT("get_compile_warning_nodes") ||
+        Method == TEXT("get_generated_class_status") || Method == TEXT("get_skeleton_class_status") ||
+        Method == TEXT("get_blueprint_bytecode_summary") || Method == TEXT("get_last_successful_compile") ||
+        Method == TEXT("refresh_blueprint_nodes") || Method == TEXT("reconstruct_blueprint_node") ||
+        Method == TEXT("reinstance_blueprint") || Method == TEXT("validate_blueprint_asset") || Method == TEXT("validate_blueprint_dependencies")
+      )
+      {
+        auto KeyForBlueprint = [](UBlueprint* BP) -> FString {
+          if (!BP) return TEXT("");
+          const FString ObjPath = BP->GetPathName();
+          if (!ObjPath.IsEmpty()) return ObjPath;
+          return BP->GetOutermost() ? BP->GetOutermost()->GetName() : TEXT("");
+        };
+
+        auto StoreCompilePayload = [](const FString& Key, const TSharedPtr<FJsonObject>& Payload, bool bSuccessful) {
+          if (!Payload.IsValid() || Key.IsEmpty()) return;
+          FScopeLock Lock(&GCompileMutex);
+          GLastCompileAny = Payload;
+          GLastCompileByBlueprint.Add(Key, Payload);
+          if (bSuccessful)
+          {
+            GLastSuccessfulCompileByBlueprint.Add(Key, Payload);
+          }
+        };
+
+        auto LoadLastPayload = [](const FString& Key, bool bSuccessfulOnly) -> TSharedPtr<FJsonObject> {
+          FScopeLock Lock(&GCompileMutex);
+          if (!Key.IsEmpty())
+          {
+            if (bSuccessfulOnly)
+            {
+              if (const TSharedPtr<FJsonObject>* Found = GLastSuccessfulCompileByBlueprint.Find(Key)) return *Found;
+            }
+            else
+            {
+              if (const TSharedPtr<FJsonObject>* Found = GLastCompileByBlueprint.Find(Key)) return *Found;
+            }
+          }
+          return GLastCompileAny;
+        };
+
+        auto ExportCompilerLog = [](UBlueprint* BP, const FCompilerResultsLog& Log, double ElapsedSeconds, const FString& Operation) {
+          TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
+
+          const FString ObjPath = BP ? BP->GetPathName() : TEXT("");
+          const FString AssetPath = (BP && BP->GetOutermost()) ? BP->GetOutermost()->GetName() : TEXT("");
+
+          Payload->SetStringField(TEXT("operation"), Operation);
+          Payload->SetStringField(TEXT("blueprint_object_path"), ObjPath);
+          Payload->SetStringField(TEXT("blueprint_asset_path"), AssetPath);
+          Payload->SetNumberField(TEXT("elapsed_seconds"), ElapsedSeconds);
+
+          TArray<TSharedPtr<FJsonValue>> Messages;
+          int32 Errors = 0;
+          int32 Warnings = 0;
+          int32 Notes = 0;
+
+          int32 Idx = 0;
+          for (const TSharedRef<FTokenizedMessage>& M : Log.Messages)
+          {
+            const FString Severity = SeverityToString(M->GetSeverity());
+            if (Severity == TEXT("error")) Errors++;
+            else if (Severity == TEXT("warning")) Warnings++;
+            else Notes++;
+
+            TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+            Obj->SetStringField(TEXT("id"), FString::Printf(TEXT("m%d"), Idx++));
+            Obj->SetStringField(TEXT("severity"), Severity);
+            Obj->SetStringField(TEXT("message"), M->ToText().ToString());
+
+            // Best-effort: pull out referenced objects and a node (if present).
+            FString GraphName;
+            FString NodeId;
+            FString NodeTitle;
+            TArray<TSharedPtr<FJsonValue>> Objects;
+
+            for (const TSharedRef<IMessageToken>& Tok : M->GetMessageTokens())
+            {
+              if (Tok->GetType() != EMessageToken::UObject)
+              {
+                continue;
+              }
+
+              const TSharedRef<FUObjectToken> OT = StaticCastSharedRef<FUObjectToken>(Tok);
+              UObject* UObj = OT->GetObject().Get();
+              if (!UObj)
+              {
+                continue;
+              }
+
+              Objects.Add(MakeShared<FJsonValueString>(UObj->GetPathName()));
+
+              if (NodeId.IsEmpty())
+              {
+                if (UEdGraphNode* Node = Cast<UEdGraphNode>(UObj))
+                {
+                  NodeId = Node->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens);
+                  NodeTitle = Node->GetNodeTitle(ENodeTitleType::ListView).ToString();
+                  if (UEdGraph* G = Node->GetGraph())
+                  {
+                    GraphName = G->GetName();
+                  }
+                }
+              }
+            }
+
+            Obj->SetArrayField(TEXT("objects"), Objects);
+            Obj->SetStringField(TEXT("graph"), GraphName);
+            Obj->SetStringField(TEXT("node_id"), NodeId);
+            Obj->SetStringField(TEXT("node_title"), NodeTitle);
+            Messages.Add(MakeShared<FJsonValueObject>(Obj));
+          }
+
+          Payload->SetBoolField(TEXT("success"), Errors == 0);
+          Payload->SetNumberField(TEXT("errors"), Errors);
+          Payload->SetNumberField(TEXT("warnings"), Warnings);
+          Payload->SetNumberField(TEXT("notes"), Notes);
+          Payload->SetArrayField(TEXT("messages"), Messages);
+
+          if (BP)
+          {
+            Payload->SetStringField(TEXT("blueprint_status"), StaticEnum<EBlueprintStatus>()->GetNameStringByValue(static_cast<int64>(BP->Status)));
+          }
+          return Payload;
+        };
+
+        auto CompileOne = [&](UBlueprint* BP, const FString& Operation) -> TSharedPtr<FJsonObject> {
+          if (!BP)
+          {
+            TSharedPtr<FJsonObject> Empty = MakeShared<FJsonObject>();
+            Empty->SetStringField(TEXT("operation"), Operation);
+            Empty->SetBoolField(TEXT("compiled"), false);
+            Empty->SetBoolField(TEXT("success"), false);
+            Empty->SetNumberField(TEXT("errors"), 0);
+            Empty->SetNumberField(TEXT("warnings"), 0);
+            Empty->SetArrayField(TEXT("messages"), TArray<TSharedPtr<FJsonValue>>());
+            Empty->SetStringField(TEXT("note"), TEXT("Blueprint not found"));
+            return Empty;
+          }
+
+          const double StartSeconds = FPlatformTime::Seconds();
+          FCompilerResultsLog Log;
+          Log.bLogDetailedResults = true;
+
+          // Compile without saving.
+          FKismetEditorUtilities::CompileBlueprint(BP, EBlueprintCompileOptions::None, &Log);
+          const double Elapsed = FPlatformTime::Seconds() - StartSeconds;
+
+          TSharedPtr<FJsonObject> Payload = ExportCompilerLog(BP, Log, Elapsed, Operation);
+          Payload->SetBoolField(TEXT("compiled"), true);
+          return Payload;
+        };
+
+        if (
+          Method == TEXT("compile_blueprint") || Method == TEXT("compile_selected_blueprint") || Method == TEXT("compile_and_capture_messages") ||
+          Method == TEXT("refresh_blueprint_nodes") || Method == TEXT("reconstruct_blueprint_node") || Method == TEXT("reinstance_blueprint") ||
+          Method == TEXT("validate_blueprint_asset") || Method == TEXT("validate_blueprint_dependencies") ||
+          Method == TEXT("get_compile_messages") || Method == TEXT("get_compile_message_details") || Method == TEXT("get_compile_error_nodes") ||
+          Method == TEXT("get_compile_warning_nodes") || Method == TEXT("get_generated_class_status") || Method == TEXT("get_skeleton_class_status") ||
+          Method == TEXT("get_blueprint_bytecode_summary") || Method == TEXT("get_last_successful_compile")
+        )
+        {
+          UBlueprint* BP = ResolveBlueprintBestEffort(Params);
+          const FString Key = KeyForBlueprint(BP);
+
+          if (Method == TEXT("refresh_blueprint_nodes"))
+          {
+            if (BP)
+            {
+              FBlueprintEditorUtils::RefreshAllNodes(BP);
+              Result->SetBoolField(TEXT("refreshed"), true);
+              Result->SetStringField(TEXT("blueprint_object_path"), BP->GetPathName());
+              Result->SetStringField(TEXT("blueprint_asset_path"), BP->GetOutermost() ? BP->GetOutermost()->GetName() : TEXT(""));
+            }
+            else
+            {
+              Result->SetBoolField(TEXT("refreshed"), false);
+              Result->SetStringField(TEXT("note"), TEXT("Blueprint not found"));
+            }
+          }
+          else if (Method == TEXT("reconstruct_blueprint_node"))
+          {
+            FString NodeId;
+            if (Params.IsValid()) Params->TryGetStringField(TEXT("node_id"), NodeId);
+
+            bool bReconstructed = false;
+            if (BP && !NodeId.IsEmpty())
+            {
+              FGuid Target;
+              if (FGuid::Parse(NodeId, Target))
+              {
+                auto ScanGraphs = [&](const TArray<UEdGraph*>& Graphs) {
+                  for (UEdGraph* G : Graphs)
+                  {
+                    if (!G) continue;
+                    for (UEdGraphNode* N : G->Nodes)
+                    {
+                      if (N && N->NodeGuid == Target)
+                      {
+                        N->ReconstructNode();
+                        bReconstructed = true;
+                        return;
+                      }
+                    }
+                  }
+                };
+
+                ScanGraphs(BP->UbergraphPages);
+                if (!bReconstructed) ScanGraphs(BP->FunctionGraphs);
+                if (!bReconstructed) ScanGraphs(BP->MacroGraphs);
+              }
+            }
+
+            Result->SetBoolField(TEXT("reconstructed"), bReconstructed);
+            Result->SetStringField(TEXT("node_id"), NodeId);
+            Result->SetStringField(TEXT("blueprint_object_path"), BP ? BP->GetPathName() : TEXT(""));
+            if (!bReconstructed)
+            {
+              Result->SetStringField(TEXT("note"), TEXT("Best-effort: node not found or node_id missing"));
+            }
+          }
+          else if (Method == TEXT("reinstance_blueprint"))
+          {
+            // Advanced: reinstancing is implicit during compile; keeping this tool as a safe placeholder.
+            Result->SetBoolField(TEXT("supported"), false);
+            Result->SetStringField(TEXT("note"), TEXT("Not implemented yet: explicit reinstancing requires deeper editor integration."));
+          }
+          else if (Method == TEXT("validate_blueprint_dependencies"))
+          {
+            // Best-effort: check that content dependencies resolve to existing packages.
+            TArray<TSharedPtr<FJsonValue>> Missing;
+            FString Package;
+            if (BP && BP->GetOutermost())
+            {
+              Package = BP->GetOutermost()->GetName();
+            }
+            else if (Params.IsValid())
+            {
+              Params->TryGetStringField(TEXT("asset_path"), Package);
+            }
+
+            Result->SetStringField(TEXT("package"), Package);
+            if (!Package.IsEmpty())
+            {
+              FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+              IAssetRegistry& Registry = AssetRegistryModule.Get();
+              TArray<FName> Deps;
+
+  #if (ENGINE_MAJOR_VERSION > 5) || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5)
+              Registry.GetDependencies(
+                FName(*Package),
+                Deps,
+                UE::AssetRegistry::EDependencyCategory::All,
+                UE::AssetRegistry::FDependencyQuery());
+  #else
+              Registry.GetDependencies(FName(*Package), Deps, EAssetRegistryDependencyType::All);
+  #endif
+
+              for (const FName& N : Deps)
+              {
+                const FString Dep = N.ToString();
+                if (Dep.StartsWith(TEXT("/Script/"))) continue;
+                if (!Dep.StartsWith(TEXT("/"))) continue;
+                if (!FPackageName::DoesPackageExist(Dep))
+                {
+                  Missing.Add(MakeShared<FJsonValueString>(Dep));
+                }
+              }
+            }
+            Result->SetArrayField(TEXT("missing_dependencies"), Missing);
+            Result->SetNumberField(TEXT("missing_count"), Missing.Num());
+          }
+          else if (Method == TEXT("validate_blueprint_asset"))
+          {
+            // Best-effort: validate by compiling and returning normalized diagnostics.
+            TSharedPtr<FJsonObject> Payload = CompileOne(BP, TEXT("validate_blueprint_asset"));
+            const bool bSuccess = Payload.IsValid() && Payload->HasField(TEXT("success")) ? Payload->GetBoolField(TEXT("success")) : false;
+            if (Payload.IsValid())
+            {
+              StoreCompilePayload(Key, Payload, bSuccess);
+              Result = Payload;
+            }
+          }
+          else if (Method == TEXT("compile_blueprint") || Method == TEXT("compile_selected_blueprint") || Method == TEXT("compile_and_capture_messages"))
+          {
+            TSharedPtr<FJsonObject> Payload = CompileOne(BP, Method);
+            const bool bSuccess = Payload.IsValid() && Payload->HasField(TEXT("success")) ? Payload->GetBoolField(TEXT("success")) : false;
+            StoreCompilePayload(Key, Payload, bSuccess);
+            Result = Payload;
+          }
+          else if (Method == TEXT("get_compile_messages"))
+          {
+            TSharedPtr<FJsonObject> Payload = LoadLastPayload(Key, false);
+            if (Payload.IsValid())
+            {
+              Result = Payload;
+            }
+            else
+            {
+              Result->SetArrayField(TEXT("messages"), TArray<TSharedPtr<FJsonValue>>());
+              Result->SetNumberField(TEXT("errors"), 0);
+              Result->SetNumberField(TEXT("warnings"), 0);
+              Result->SetBoolField(TEXT("success"), true);
+              Result->SetStringField(TEXT("note"), TEXT("No compile payload has been captured yet."));
+            }
+          }
+          else if (Method == TEXT("get_compile_message_details"))
+          {
+            FString MessageId;
+            if (Params.IsValid()) Params->TryGetStringField(TEXT("message_id"), MessageId);
+            TSharedPtr<FJsonObject> Payload = LoadLastPayload(Key, false);
+
+            Result->SetStringField(TEXT("message_id"), MessageId);
+            Result->SetBoolField(TEXT("found"), false);
+
+            if (Payload.IsValid())
+            {
+              const TArray<TSharedPtr<FJsonValue>>* Msgs = nullptr;
+              if (Payload->TryGetArrayField(TEXT("messages"), Msgs) && Msgs)
+              {
+                for (const TSharedPtr<FJsonValue>& V : *Msgs)
+                {
+                  if (!V.IsValid()) continue;
+                  const TSharedPtr<FJsonObject>* O = nullptr;
+                  if (!V->TryGetObject(O) || !O || !O->IsValid()) continue;
+                  FString Id;
+                  if ((*O)->TryGetStringField(TEXT("id"), Id) && Id == MessageId)
+                  {
+                    Result->SetBoolField(TEXT("found"), true);
+                    Result->SetObjectField(TEXT("message"), *O);
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (MessageId.IsEmpty())
+            {
+              Result->SetStringField(TEXT("note"), TEXT("message_id is required"));
+            }
+          }
+          else if (Method == TEXT("get_compile_error_nodes") || Method == TEXT("get_compile_warning_nodes"))
+          {
+            const FString Wanted = (Method == TEXT("get_compile_error_nodes")) ? TEXT("error") : TEXT("warning");
+            TSharedPtr<FJsonObject> Payload = LoadLastPayload(Key, false);
+            TArray<TSharedPtr<FJsonValue>> Nodes;
+
+            if (Payload.IsValid())
+            {
+              const TArray<TSharedPtr<FJsonValue>>* Msgs = nullptr;
+              if (Payload->TryGetArrayField(TEXT("messages"), Msgs) && Msgs)
+              {
+                TSet<FString> Seen;
+                for (const TSharedPtr<FJsonValue>& V : *Msgs)
+                {
+                  const TSharedPtr<FJsonObject>* O = nullptr;
+                  if (!V.IsValid() || !V->TryGetObject(O) || !O || !O->IsValid()) continue;
+                  FString Sev;
+                  FString NodeId;
+                  FString NodeTitle;
+                  FString Graph;
+                  (*O)->TryGetStringField(TEXT("severity"), Sev);
+                  (*O)->TryGetStringField(TEXT("node_id"), NodeId);
+                  (*O)->TryGetStringField(TEXT("node_title"), NodeTitle);
+                  (*O)->TryGetStringField(TEXT("graph"), Graph);
+                  if (Sev != Wanted) continue;
+                  if (NodeId.IsEmpty()) continue;
+                  if (Seen.Contains(NodeId)) continue;
+                  Seen.Add(NodeId);
+
+                  TSharedPtr<FJsonObject> N = MakeShared<FJsonObject>();
+                  N->SetStringField(TEXT("graph"), Graph);
+                  N->SetStringField(TEXT("node_id"), NodeId);
+                  N->SetStringField(TEXT("node_title"), NodeTitle);
+                  Nodes.Add(MakeShared<FJsonValueObject>(N));
+                }
+              }
+            }
+
+            Result->SetArrayField(TEXT("nodes"), Nodes);
+            Result->SetNumberField(TEXT("returned"), Nodes.Num());
+            Result->SetStringField(TEXT("severity"), Wanted);
+          }
+          else if (Method == TEXT("get_generated_class_status"))
+          {
+            Result->SetBoolField(TEXT("blueprint_found"), BP != nullptr);
+            Result->SetStringField(TEXT("generated_class"), BP && BP->GeneratedClass ? BP->GeneratedClass->GetPathName() : TEXT(""));
+            Result->SetBoolField(TEXT("has_generated_class"), BP && BP->GeneratedClass != nullptr);
+          }
+          else if (Method == TEXT("get_skeleton_class_status"))
+          {
+            Result->SetBoolField(TEXT("blueprint_found"), BP != nullptr);
+            Result->SetStringField(TEXT("skeleton_class"), BP && BP->SkeletonGeneratedClass ? BP->SkeletonGeneratedClass->GetPathName() : TEXT(""));
+            Result->SetBoolField(TEXT("has_skeleton_class"), BP && BP->SkeletonGeneratedClass != nullptr);
+          }
+          else if (Method == TEXT("get_blueprint_bytecode_summary"))
+          {
+            int32 FunctionCount = 0;
+            int64 BytecodeBytes = 0;
+            if (BP && BP->GeneratedClass)
+            {
+              for (TFieldIterator<UFunction> It(BP->GeneratedClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
+              {
+                UFunction* F = *It;
+                if (!F) continue;
+                FunctionCount++;
+                BytecodeBytes += F->Script.Num();
+              }
+            }
+            Result->SetBoolField(TEXT("blueprint_found"), BP != nullptr);
+            Result->SetStringField(TEXT("generated_class"), BP && BP->GeneratedClass ? BP->GeneratedClass->GetPathName() : TEXT(""));
+            Result->SetNumberField(TEXT("function_count"), FunctionCount);
+            Result->SetNumberField(TEXT("bytecode_bytes"), static_cast<double>(BytecodeBytes));
+            Result->SetStringField(TEXT("note"), TEXT("Best-effort: sums UFunction::Script size for functions defined on the generated class."));
+          }
+          else if (Method == TEXT("get_last_successful_compile"))
+          {
+            TSharedPtr<FJsonObject> Payload = LoadLastPayload(Key, true);
+            if (Payload.IsValid())
+            {
+              Result = Payload;
+            }
+            else
+            {
+              Result->SetBoolField(TEXT("found"), false);
+              Result->SetStringField(TEXT("note"), TEXT("No successful compile payload has been captured yet."));
+            }
+          }
+        }
+        else
+        {
+          // Multi-compile operations
+          if (Method == TEXT("compile_blueprints"))
+          {
+            const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+            if (!Params.IsValid() || !Params->TryGetArrayField(TEXT("asset_paths"), Arr) || !Arr)
+            {
+              Result->SetNumberField(TEXT("compiled"), 0);
+              Result->SetNumberField(TEXT("errors"), 0);
+              Result->SetNumberField(TEXT("warnings"), 0);
+              Result->SetArrayField(TEXT("results"), TArray<TSharedPtr<FJsonValue>>());
+              Result->SetStringField(TEXT("note"), TEXT("asset_paths is required (array of Blueprint package/object paths)."));
+            }
+            else
+            {
+              TArray<TSharedPtr<FJsonValue>> Per;
+              int32 Compiled = 0;
+              int32 Errors = 0;
+              int32 Warnings = 0;
+              for (const TSharedPtr<FJsonValue>& V : *Arr)
+              {
+                if (!V.IsValid()) continue;
+                FString P;
+                if (!V->TryGetString(P)) continue;
+                UBlueprint* BP = Cast<UBlueprint>(LoadObjectByPathBestEffort(P));
+                TSharedPtr<FJsonObject> Payload = CompileOne(BP, TEXT("compile_blueprints"));
+                const bool bSuccess = Payload.IsValid() && Payload->HasField(TEXT("success")) ? Payload->GetBoolField(TEXT("success")) : false;
+                const FString Key = KeyForBlueprint(BP);
+                StoreCompilePayload(Key, Payload, bSuccess);
+                Per.Add(MakeShared<FJsonValueObject>(Payload));
+                if (BP) Compiled++;
+                Errors += Payload.IsValid() && Payload->HasTypedField<EJson::Number>(TEXT("errors")) ? static_cast<int32>(Payload->GetNumberField(TEXT("errors"))) : 0;
+                Warnings += Payload.IsValid() && Payload->HasTypedField<EJson::Number>(TEXT("warnings")) ? static_cast<int32>(Payload->GetNumberField(TEXT("warnings"))) : 0;
+              }
+              Result->SetNumberField(TEXT("compiled"), Compiled);
+              Result->SetNumberField(TEXT("errors"), Errors);
+              Result->SetNumberField(TEXT("warnings"), Warnings);
+              Result->SetArrayField(TEXT("results"), Per);
+            }
+          }
+          else if (Method == TEXT("compile_all_dirty_blueprints"))
+          {
+            TArray<UPackage*> Dirty;
+            FEditorFileUtils::GetDirtyContentPackages(Dirty);
+            TArray<UPackage*> DirtyWorld;
+            FEditorFileUtils::GetDirtyWorldPackages(DirtyWorld);
+            Dirty.Append(DirtyWorld);
+
+            TArray<TSharedPtr<FJsonValue>> Per;
+            int32 Compiled = 0;
+            int32 Errors = 0;
+            int32 Warnings = 0;
+            for (UPackage* Pkg : Dirty)
+            {
+              if (!Pkg) continue;
+              const FString PackageName = Pkg->GetName();
+              UBlueprint* BP = Cast<UBlueprint>(LoadObjectByPathBestEffort(PackageName));
+              if (!BP) continue;
+              TSharedPtr<FJsonObject> Payload = CompileOne(BP, TEXT("compile_all_dirty_blueprints"));
+              const bool bSuccess = Payload.IsValid() && Payload->HasField(TEXT("success")) ? Payload->GetBoolField(TEXT("success")) : false;
+              StoreCompilePayload(KeyForBlueprint(BP), Payload, bSuccess);
+              Per.Add(MakeShared<FJsonValueObject>(Payload));
+              Compiled++;
+              Errors += Payload.IsValid() && Payload->HasTypedField<EJson::Number>(TEXT("errors")) ? static_cast<int32>(Payload->GetNumberField(TEXT("errors"))) : 0;
+              Warnings += Payload.IsValid() && Payload->HasTypedField<EJson::Number>(TEXT("warnings")) ? static_cast<int32>(Payload->GetNumberField(TEXT("warnings"))) : 0;
+            }
+            Result->SetNumberField(TEXT("compiled"), Compiled);
+            Result->SetNumberField(TEXT("errors"), Errors);
+            Result->SetNumberField(TEXT("warnings"), Warnings);
+            Result->SetArrayField(TEXT("results"), Per);
+          }
+        }
+      }
+
       else if (Method == TEXT("get_blueprint_graph") || Method == TEXT("get_blueprint_dependencies") || Method == TEXT("get_blueprint_dependents"))
       {
         UBlueprint* BP = ResolveBlueprintBestEffort(Params);
@@ -1610,7 +2187,7 @@ namespace
       Done->Trigger();
     });
 
-    bCompleted = Done->Wait(static_cast<uint32>(kGameThreadWaitSeconds * 1000.0));
+    bCompleted = Done->Wait(static_cast<uint32>(GameThreadWaitSecondsForMethod(Method) * 1000.0));
     FPlatformProcess::ReturnSynchEventToPool(Done);
 
     if (!bCompleted)
@@ -1904,6 +2481,27 @@ private:
             SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("OBJECT_NOT_FOUND"), TEXT("Object not found (check object_path/asset_path/actor_name)"))));
             return;
           }
+        }
+
+        SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));
+        return;
+      }
+
+      if (
+        Method == TEXT("compile_blueprint") || Method == TEXT("compile_selected_blueprint") || Method == TEXT("compile_blueprints") ||
+        Method == TEXT("compile_all_dirty_blueprints") || Method == TEXT("get_compile_messages") || Method == TEXT("get_compile_message_details") ||
+        Method == TEXT("get_compile_error_nodes") || Method == TEXT("get_compile_warning_nodes") || Method == TEXT("compile_and_capture_messages") ||
+        Method == TEXT("get_generated_class_status") || Method == TEXT("get_skeleton_class_status") || Method == TEXT("get_blueprint_bytecode_summary") ||
+        Method == TEXT("get_last_successful_compile") || Method == TEXT("refresh_blueprint_nodes") || Method == TEXT("reconstruct_blueprint_node") ||
+        Method == TEXT("reinstance_blueprint") || Method == TEXT("validate_blueprint_asset") || Method == TEXT("validate_blueprint_dependencies")
+      )
+      {
+        bool bCompleted = false;
+        TSharedPtr<FJsonObject> Result = HandleOnGameThreadBlocking(Method, Params, bCompleted);
+        if (!bCompleted || !Result.IsValid())
+        {
+          SendLine(Client, ToLine(MakeJsonErrorResponse(RequestId, TEXT("REQUEST_TIMEOUT"), TEXT("Timed out waiting for game thread"))));
+          return;
         }
 
         SendLine(Client, ToLine(MakeJsonSuccessResponse(RequestId, Result)));

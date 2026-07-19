@@ -1133,6 +1133,238 @@ const TOOL_DEFS = [
       },
       additionalProperties: false
     }
+  },
+
+  // Priority 4 — Compilation and diagnostics
+  {
+    name: "unreal.compile_blueprint",
+    description: "Compile one Blueprint without automatically saving.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.compile_selected_blueprint",
+    description: "Compile the active Blueprint.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.compile_blueprints",
+    description: "Compile several named Blueprints.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        asset_paths: { type: "array", items: { type: "string" }, description: "Blueprint package/object paths." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.compile_all_dirty_blueprints",
+    description: "Compile modified Blueprint assets.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "unreal.get_compile_messages",
+    description: "Errors, warnings and notes (from last captured compile).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_compile_message_details",
+    description: "Full details for one diagnostic (from last captured compile).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        message_id: { type: "string", description: "Message id (e.g. m0) returned by compile tools." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_compile_error_nodes",
+    description: "Map errors back to nodes (best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_compile_warning_nodes",
+    description: "Map warnings back to nodes (best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.compile_and_capture_messages",
+    description: "Compile and return normalized diagnostics.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_generated_class_status",
+    description: "Check generated class availability.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_skeleton_class_status",
+    description: "Inspect Blueprint skeleton class.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_blueprint_bytecode_summary",
+    description: "Optional compiled execution summary (best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.get_last_successful_compile",
+    description: "Last known clean compile (best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.compare_compile_results",
+    description: "Compare before and after diagnostics (pure MCP-side diff).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        before: { type: "object", description: "Previous compile payload (as returned by compile tools)." },
+        after: { type: "object", description: "New compile payload (as returned by compile tools)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.reinstance_blueprint",
+    description: "Advanced recovery after recompilation (best-effort; may be unsupported).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.refresh_blueprint_nodes",
+    description: "Refresh stale nodes (best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.reconstruct_blueprint_node",
+    description: "Reconstruct a specific node (best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" },
+        node_id: { type: "string", description: "Node GUID (DigitsWithHyphens)" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.validate_blueprint_asset",
+    description: "Run asset validation (best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "unreal.validate_blueprint_dependencies",
+    description: "Detect missing or broken dependencies (best-effort).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        object_path: { type: "string" },
+        asset_path: { type: "string" },
+        use_active_if_missing: { type: "boolean" }
+      },
+      additionalProperties: false
+    }
   }
 ] as const;
 
@@ -2550,6 +2782,152 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "unreal.select_blueprint_nodes") {
       return asToolResult({ ok: true, supported: false, note: "Not implemented yet (requires Blueprint editor UI integration)." });
+    }
+
+    // Priority 4 — Compilation and diagnostics
+    if (name === "unreal.compile_blueprint") {
+      const res = await run(name, () => client.compileBlueprint(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.compile_selected_blueprint") {
+      const res = await run(name, () => client.compileSelectedBlueprint());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.compile_blueprints") {
+      const asset_paths = Array.isArray(args.asset_paths) ? args.asset_paths.filter((x) => typeof x === "string") : undefined;
+      const res = await run(name, () => client.compileBlueprints({ asset_paths }));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.compile_all_dirty_blueprints") {
+      const res = await run(name, () => client.compileAllDirtyBlueprints());
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_compile_messages") {
+      const res = await run(name, () => client.getCompileMessages(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_compile_message_details") {
+      const res = await run(name, () =>
+        client.getCompileMessageDetails({ ...bpRef(), message_id: typeof args.message_id === "string" ? args.message_id : undefined })
+      );
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_compile_error_nodes") {
+      const res = await run(name, () => client.getCompileErrorNodes(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_compile_warning_nodes") {
+      const res = await run(name, () => client.getCompileWarningNodes(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.compile_and_capture_messages") {
+      const res = await run(name, () => client.compileAndCaptureMessages(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_generated_class_status") {
+      const res = await run(name, () => client.getGeneratedClassStatus(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_skeleton_class_status") {
+      const res = await run(name, () => client.getSkeletonClassStatus(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_blueprint_bytecode_summary") {
+      const res = await run(name, () => client.getBlueprintBytecodeSummary(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.get_last_successful_compile") {
+      const res = await run(name, () => client.getLastSuccessfulCompile(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.compare_compile_results") {
+      const before = typeof args.before === "object" && args.before !== null ? (args.before as any) : null;
+      const after = typeof args.after === "object" && args.after !== null ? (args.after as any) : null;
+
+      const msgs = (x: any) => {
+        const arr = Array.isArray(x?.messages) ? x.messages : Array.isArray(x?.result?.messages) ? x.result.messages : [];
+        return arr
+          .filter((m: any) => m && typeof m === "object")
+          .map((m: any) => ({
+            severity: String(m.severity ?? ""),
+            message: String(m.message ?? ""),
+            graph: String(m.graph ?? ""),
+            node_id: String(m.node_id ?? ""),
+            node_title: String(m.node_title ?? "")
+          }));
+      };
+
+      const normKey = (m: any) => `${m.severity}|${m.graph}|${m.node_id}|${m.message}`;
+      const b = msgs(before);
+      const a = msgs(after);
+      const bSet = new Map<string, any>();
+      for (const m of b) bSet.set(normKey(m), m);
+      const aSet = new Map<string, any>();
+      for (const m of a) aSet.set(normKey(m), m);
+
+      const added: any[] = [];
+      const removed: any[] = [];
+      for (const [k, m] of aSet) if (!bSet.has(k)) added.push(m);
+      for (const [k, m] of bSet) if (!aSet.has(k)) removed.push(m);
+
+      const countBySev = (arr: any[]) =>
+        arr.reduce(
+          (acc, m) => {
+            const s = String(m?.severity ?? "note") || "note";
+            acc[s] = (acc[s] ?? 0) + 1;
+            return acc;
+          },
+          {} as Record<string, number>
+        );
+
+      return asToolResult({
+        ok: true,
+        before_messages: b.length,
+        after_messages: a.length,
+        added: { total: added.length, by_severity: countBySev(added), messages: added.slice(0, 200) },
+        removed: { total: removed.length, by_severity: countBySev(removed), messages: removed.slice(0, 200) },
+        note: "Diff key: severity|graph|node_id|message. Truncated to 200 messages each side."
+      });
+    }
+
+    if (name === "unreal.reinstance_blueprint") {
+      const res = await run(name, () => client.reinstanceBlueprint(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.refresh_blueprint_nodes") {
+      const res = await run(name, () => client.refreshBlueprintNodes(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.reconstruct_blueprint_node") {
+      const res = await run(name, () =>
+        client.reconstructBlueprintNode({ ...bpRef(), node_id: typeof args.node_id === "string" ? args.node_id : undefined })
+      );
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.validate_blueprint_asset") {
+      const res = await run(name, () => client.validateBlueprintAsset(bpRef()));
+      return asToolResult(res);
+    }
+
+    if (name === "unreal.validate_blueprint_dependencies") {
+      const res = await run(name, () => client.validateBlueprintDependencies(bpRef()));
+      return asToolResult(res);
     }
 
     return {
